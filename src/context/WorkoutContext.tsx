@@ -1,13 +1,28 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { 
   WorkoutSession, 
   PersonalRecord, 
   UserProfile, 
   MuscleGroup, 
-  WorkoutExerciseLog 
+  WorkoutExerciseLog,
+  BodyWeightLog
 } from '../types/workout';
 import { routineData } from '../data/routineData';
 import confetti from 'canvas-confetti';
+import {
+  checkNeonHealth,
+  cloudFetchProfile,
+  cloudSaveProfile,
+  cloudFetchPRs,
+  cloudSavePR,
+  cloudDeletePR,
+  cloudFetchWorkoutHistory,
+  cloudSaveWorkoutSession,
+  cloudDeleteWorkoutSession,
+  cloudFetchBodyWeightLogs,
+  cloudSaveBodyWeightLog,
+  cloudDeleteBodyWeightLog
+} from '../lib/neon';
 
 interface RestTimerState {
   isRunning: boolean;
@@ -47,6 +62,11 @@ interface WorkoutContextType {
   workoutHistory: WorkoutSession[];
   deleteWorkoutSession: (sessionId: string) => void;
 
+  // Body Weight Logs
+  bodyWeightLogs: BodyWeightLog[];
+  addBodyWeightLog: (weightKg: number, date?: string, notes?: string) => void;
+  deleteBodyWeightLog: (id: string) => void;
+
   // Rest Timer
   restTimer: RestTimerState;
   startRestTimer: (seconds: number, exerciseName?: string) => void;
@@ -59,9 +79,16 @@ interface WorkoutContextType {
   userProfile: UserProfile;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
 
+  // Cloud Sync (Neon PostgreSQL)
+  isCloudConnected: boolean;
+  isSyncing: boolean;
+  lastSyncedAt: string | null;
+  syncWithNeonCloud: () => Promise<boolean>;
+
   // Backup & Restore
   exportDataJSON: () => string;
   importDataJSON: (jsonStr: string) => boolean;
+  exportDataCSV: (startDate?: string, endDate?: string, type?: 'workouts' | 'bodyweight' | 'all') => void;
   resetAllData: () => void;
 
   // Live Modal Controls
@@ -89,7 +116,6 @@ const INITIAL_PROFILE: UserProfile = {
   activityFactor: 1.55,
 };
 
-// Seed initial PRs for the exercises from routine data so the app isn't empty on day 1
 const INITIAL_PRS: Record<string, PersonalRecord> = {
   '1-1': {
     exerciseId: '1-1',
@@ -156,6 +182,27 @@ const INITIAL_PRS: Record<string, PersonalRecord> = {
   }
 };
 
+const INITIAL_BW_LOGS: BodyWeightLog[] = [
+  {
+    id: 'bw_seed_1',
+    date: new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0],
+    weightKg: 91.5,
+    notes: 'Inicio de seguimiento'
+  },
+  {
+    id: 'bw_seed_2',
+    date: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
+    weightKg: 90.8,
+    notes: 'En ayunas'
+  },
+  {
+    id: 'bw_seed_3',
+    date: new Date().toISOString().split('T')[0],
+    weightKg: 90.0,
+    notes: 'Calibración actual'
+  }
+];
+
 export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeTab, setActiveTab] = useState<string>(() => {
     return localStorage.getItem('sf_active_tab') || 'dashboard';
@@ -197,16 +244,51 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
+  const [bodyWeightLogs, setBodyWeightLogs] = useState<BodyWeightLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('sf_body_weight_logs');
+      return saved ? JSON.parse(saved) : INITIAL_BW_LOGS;
+    } catch {
+      return INITIAL_BW_LOGS;
+    }
+  });
+
+  // Active Live Workout Session state with Crash-Resistant Reload Restoration
   const [activeSession, setActiveSession] = useState<ActiveSessionState | null>(() => {
     try {
       const saved = localStorage.getItem('sf_active_session');
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed: ActiveSessionState = JSON.parse(saved);
+      // Recalculate accurate elapsed seconds since start
+      if (parsed.startTime) {
+        const startTimestamp = new Date(parsed.startTime).getTime();
+        if (!isNaN(startTimestamp)) {
+          parsed.elapsedSeconds = Math.max(0, Math.floor((Date.now() - startTimestamp) / 1000));
+        }
+      }
+      return parsed;
     } catch {
       return null;
     }
   });
 
-  const [isLiveModalOpen, setIsLiveModalOpen] = useState<boolean>(false);
+  // Auto restore modal state if there is an active workout
+  const [isLiveModalOpen, setIsLiveModalOpen] = useState<boolean>(() => {
+    try {
+      const hasActiveSession = !!localStorage.getItem('sf_active_session');
+      if (hasActiveSession) return true;
+      return localStorage.getItem('sf_is_live_modal_open') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Cloud Sync State (Neon PostgreSQL)
+  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() => {
+    return localStorage.getItem('sf_last_synced_at') || null;
+  });
 
   // Rest Timer State
   const [restTimer, setRestTimer] = useState<RestTimerState>({
@@ -216,7 +298,7 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     exerciseName: undefined
   });
 
-  // Save changes to LocalStorage
+  // Save changes to LocalStorage immediately
   useEffect(() => {
     localStorage.setItem('sf_active_tab', activeTab);
   }, [activeTab]);
@@ -238,6 +320,10 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [userProfile]);
 
   useEffect(() => {
+    localStorage.setItem('sf_body_weight_logs', JSON.stringify(bodyWeightLogs));
+  }, [bodyWeightLogs]);
+
+  useEffect(() => {
     if (activeSession) {
       localStorage.setItem('sf_active_session', JSON.stringify(activeSession));
     } else {
@@ -245,16 +331,36 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [activeSession]);
 
-  // Active workout elapsed timer
+  useEffect(() => {
+    localStorage.setItem('sf_is_live_modal_open', String(isLiveModalOpen));
+  }, [isLiveModalOpen]);
+
+  // Window beforeunload prompt if in active workout
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeSession) {
+        e.preventDefault();
+        e.returnValue = 'Tienes un entrenamiento en curso. ¿Deseas salir?';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeSession]);
+
+  // Active workout elapsed timer (Calculates from startTime so page reloads never lose time)
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (activeSession) {
       interval = setInterval(() => {
         setActiveSession(prev => {
           if (!prev) return null;
+          const startTimestamp = new Date(prev.startTime).getTime();
+          const elapsed = isNaN(startTimestamp) 
+            ? prev.elapsedSeconds + 1 
+            : Math.max(0, Math.floor((Date.now() - startTimestamp) / 1000));
           return {
             ...prev,
-            elapsedSeconds: prev.elapsedSeconds + 1
+            elapsedSeconds: elapsed
           };
         });
       }, 1000);
@@ -262,41 +368,35 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [activeSession !== null]);
+  }, [activeSession?.startTime]);
 
-  // Rest Timer countdown
+  // Rest timer countdown
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
     if (restTimer.isRunning && restTimer.remainingSeconds > 0) {
       timer = setInterval(() => {
         setRestTimer(prev => {
           if (prev.remainingSeconds <= 1) {
-            // Sound beep or notification
+            // Play acoustic beep using Web Audio API
             try {
-              const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-              const osc = audioCtx.createOscillator();
-              const gain = audioCtx.createGain();
+              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
               osc.type = 'sine';
-              osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
-              gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+              osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+              gain.gain.setValueAtTime(0.3, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
               osc.connect(gain);
-              gain.connect(audioCtx.destination);
+              gain.connect(ctx.destination);
               osc.start();
-              osc.stop(audioCtx.currentTime + 0.35);
-            } catch (e) {
-              console.warn('Audio not supported:', e);
+              osc.stop(ctx.currentTime + 0.5);
+            } catch {
+              // audio fallback
             }
 
-            return {
-              ...prev,
-              isRunning: false,
-              remainingSeconds: 0
-            };
+            return { ...prev, isRunning: false, remainingSeconds: 0 };
           }
-          return {
-            ...prev,
-            remainingSeconds: prev.remainingSeconds - 1
-          };
+          return { ...prev, remainingSeconds: prev.remainingSeconds - 1 };
         });
       }, 1000);
     }
@@ -304,6 +404,80 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (timer) clearInterval(timer);
     };
   }, [restTimer.isRunning, restTimer.remainingSeconds]);
+
+  // Sync with Neon Cloud
+  const syncWithNeonCloud = useCallback(async (): Promise<boolean> => {
+    setIsSyncing(true);
+    try {
+      const health = await checkNeonHealth();
+      if (!health.ok) {
+        setIsCloudConnected(false);
+        setIsSyncing(false);
+        return false;
+      }
+      setIsCloudConnected(true);
+
+      // Fetch cloud data
+      const [cloudPrs, cloudHistory, cloudProfile, cloudBw] = await Promise.all([
+        cloudFetchPRs(),
+        cloudFetchWorkoutHistory(),
+        cloudFetchProfile(),
+        cloudFetchBodyWeightLogs()
+      ]);
+
+      // Merge Cloud PRs
+      if (cloudPrs && Object.keys(cloudPrs).length > 0) {
+        setPersonalRecords(prev => ({ ...prev, ...cloudPrs }));
+      } else {
+        Object.values(personalRecords).forEach(pr => cloudSavePR(pr));
+      }
+
+      // Merge Cloud Workout History
+      if (cloudHistory && cloudHistory.length > 0) {
+        setWorkoutHistory(prev => {
+          const ids = new Set(prev.map(s => s.id));
+          const newFromCloud = cloudHistory.filter(s => !ids.has(s.id));
+          return [...prev, ...newFromCloud].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+        });
+      } else {
+        workoutHistory.forEach(s => cloudSaveWorkoutSession(s));
+      }
+
+      // Merge Profile
+      if (cloudProfile) {
+        setUserProfile(prev => ({ ...prev, ...cloudProfile }));
+      } else {
+        cloudSaveProfile(userProfile);
+      }
+
+      // Merge Body Weight Logs
+      if (cloudBw && cloudBw.length > 0) {
+        setBodyWeightLogs(prev => {
+          const ids = new Set(prev.map(b => b.id));
+          const newFromCloud = cloudBw.filter(b => !ids.has(b.id));
+          return [...prev, ...newFromCloud].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        });
+      } else {
+        bodyWeightLogs.forEach(b => cloudSaveBodyWeightLog(b));
+      }
+
+      const syncTime = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+      setLastSyncedAt(syncTime);
+      localStorage.setItem('sf_last_synced_at', syncTime);
+      setIsSyncing(false);
+      return true;
+    } catch (e) {
+      console.error('Error syncing with Neon:', e);
+      setIsCloudConnected(false);
+      setIsSyncing(false);
+      return false;
+    }
+  }, [personalRecords, workoutHistory, userProfile, bodyWeightLogs]);
+
+  // Initial mount sync
+  useEffect(() => {
+    syncWithNeonCloud();
+  }, []);
 
   const toggleExerciseCompletion = (dayId: string, exerciseId: string) => {
     const key = `${dayId}-${exerciseId}`;
@@ -314,19 +488,16 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const startLiveWorkout = (dayId: string) => {
-    const day = routineData[dayId];
-    if (!day) return;
+    const routine = routineData[dayId];
+    if (!routine) return;
 
-    const initialExercises: WorkoutExerciseLog[] = day.exercises.map(ex => {
-      // Look up previous PR or default weight
-      const currentPr = personalRecords[ex.id];
-      const defaultWeight = currentPr ? currentPr.maxWeight : 20;
-
-      const sets = Array.from({ length: ex.targetSets }).map((_, i) => ({
-        setNumber: i + 1,
-        weight: defaultWeight,
-        reps: 10,
-        rir: Number(ex.rir) || 2,
+    const initialExerciseLogs: WorkoutExerciseLog[] = routine.exercises.map(ex => {
+      const targetSetsCount = ex.targetSets || 3;
+      const sets = Array.from({ length: targetSetsCount }, (_, idx) => ({
+        setNumber: idx + 1,
+        weight: personalRecords[ex.id]?.maxWeight || 0,
+        reps: parseInt(ex.targetReps.split('-')[0]) || 10,
+        rir: 2,
         completed: false,
         timestamp: new Date().toISOString()
       }));
@@ -343,87 +514,94 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       dayId,
       startTime: new Date().toISOString(),
       elapsedSeconds: 0,
-      exercises: initialExercises
+      exercises: initialExerciseLogs
     };
 
     setActiveSession(newSession);
+    setActiveTab(dayId);
     setIsLiveModalOpen(true);
+    localStorage.setItem('sf_active_session', JSON.stringify(newSession));
+    localStorage.setItem('sf_is_live_modal_open', 'true');
   };
 
   const updateLiveSet = (
-    exerciseId: string, 
-    setIndex: number, 
-    weight: number, 
-    reps: number, 
-    rir?: number, 
+    exerciseId: string,
+    setIndex: number,
+    weight: number,
+    reps: number,
+    rir: number = 2,
     completed?: boolean
   ) => {
-    if (!activeSession) return;
-
     setActiveSession(prev => {
       if (!prev) return null;
       const updatedExercises = prev.exercises.map(ex => {
         if (ex.exerciseId !== exerciseId) return ex;
-
         const updatedSets = [...ex.sets];
-        const oldSet = updatedSets[setIndex] || { setNumber: setIndex + 1, timestamp: new Date().toISOString() };
-        
-        const isNowCompleted = completed !== undefined ? completed : oldSet.completed;
-
-        updatedSets[setIndex] = {
-          ...oldSet,
-          weight: Math.max(0, weight),
-          reps: Math.max(0, reps),
-          rir: rir !== undefined ? rir : oldSet.rir,
-          completed: isNowCompleted,
+        const prevSet = updatedSets[setIndex] || {
+          setNumber: setIndex + 1,
+          weight: 0,
+          reps: 0,
+          rir: 2,
+          completed: false,
           timestamp: new Date().toISOString()
         };
+
+        const isNewlyCompleted = completed !== undefined ? completed : prevSet.completed;
+
+        updatedSets[setIndex] = {
+          ...prevSet,
+          weight,
+          reps,
+          rir,
+          completed: isNewlyCompleted,
+          timestamp: new Date().toISOString()
+        };
+
+        // If just marked completed, trigger rest timer
+        if (!prevSet.completed && isNewlyCompleted) {
+          startRestTimer(90, ex.exerciseName);
+        }
 
         return { ...ex, sets: updatedSets };
       });
 
-      return {
+      const nextState: ActiveSessionState = {
         ...prev,
         exercises: updatedExercises
       };
+      // Immediately write to local storage
+      localStorage.setItem('sf_active_session', JSON.stringify(nextState));
+      return nextState;
     });
-
-    // Check if set is completed and might trigger PR or rest timer
-    if (completed) {
-      // Auto-start rest timer
-      startRestTimer(90);
-    }
   };
 
   const addLiveSet = (exerciseId: string) => {
-    if (!activeSession) return;
     setActiveSession(prev => {
       if (!prev) return null;
       const updated = prev.exercises.map(ex => {
         if (ex.exerciseId !== exerciseId) return ex;
         const lastSet = ex.sets[ex.sets.length - 1];
         const newSetNumber = ex.sets.length + 1;
+        const newSet = {
+          setNumber: newSetNumber,
+          weight: lastSet ? lastSet.weight : 0,
+          reps: lastSet ? lastSet.reps : 10,
+          rir: 2,
+          completed: false,
+          timestamp: new Date().toISOString()
+        };
         return {
           ...ex,
-          sets: [
-            ...ex.sets,
-            {
-              setNumber: newSetNumber,
-              weight: lastSet ? lastSet.weight : 20,
-              reps: lastSet ? lastSet.reps : 10,
-              rir: lastSet ? lastSet.rir : 2,
-              completed: false,
-              timestamp: new Date().toISOString()
-            }
-          ]
+          sets: [...ex.sets, newSet]
         };
       });
-      return { ...prev, exercises: updated };
+      const nextState = { ...prev, exercises: updated };
+      localStorage.setItem('sf_active_session', JSON.stringify(nextState));
+      return nextState;
     });
   };
 
   const removeLiveSet = (exerciseId: string, setIndex: number) => {
-    if (!activeSession) return;
     setActiveSession(prev => {
       if (!prev) return null;
       const updated = prev.exercises.map(ex => {
@@ -434,7 +612,9 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }));
         return { ...ex, sets: filtered };
       });
-      return { ...prev, exercises: updated };
+      const nextState = { ...prev, exercises: updated };
+      localStorage.setItem('sf_active_session', JSON.stringify(nextState));
+      return nextState;
     });
   };
 
@@ -489,6 +669,9 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       [exerciseId]: newPRRecord
     }));
 
+    // Async save to Neon Cloud
+    cloudSavePR(newPRRecord).catch(err => console.error('Cloud PR save failed:', err));
+
     return { isNewPR, old1RM, new1RM: calculated1RM };
   };
 
@@ -498,6 +681,7 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       delete copy[exerciseId];
       return copy;
     });
+    cloudDeletePR(exerciseId).catch(err => console.error('Cloud PR delete failed:', err));
   };
 
   const finishLiveWorkout = (notes?: string, rating: number = 5) => {
@@ -516,7 +700,6 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (s.completed && s.weight > 0 && s.reps > 0) {
           totalVolume += s.weight * s.reps;
           totalSetsCount += 1;
-          // Auto evaluate PR
           recordPR(exLog.exerciseId, exLog.exerciseName, muscleGroup, s.weight, s.reps);
         }
       });
@@ -538,6 +721,9 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setWorkoutHistory(prev => [session, ...prev]);
 
+    // Async save workout session to Neon Cloud
+    cloudSaveWorkoutSession(session).catch(err => console.error('Cloud session save failed:', err));
+
     // Mark exercises as completed for today
     if (day) {
       day.exercises.forEach(ex => {
@@ -550,6 +736,8 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setActiveSession(null);
     setIsLiveModalOpen(false);
+    localStorage.removeItem('sf_active_session');
+    localStorage.setItem('sf_is_live_modal_open', 'false');
 
     try {
       confetti({
@@ -566,12 +754,40 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (window.confirm('¿Seguro que deseas cancelar la sesión actual? Se descartarán los registros no guardados.')) {
       setActiveSession(null);
       setIsLiveModalOpen(false);
+      localStorage.removeItem('sf_active_session');
+      localStorage.setItem('sf_is_live_modal_open', 'false');
       resetRestTimer();
     }
   };
 
   const deleteWorkoutSession = (sessionId: string) => {
     setWorkoutHistory(prev => prev.filter(s => s.id !== sessionId));
+    cloudDeleteWorkoutSession(sessionId).catch(err => console.error('Cloud session delete failed:', err));
+  };
+
+  // Body Weight Tracker Handlers
+  const addBodyWeightLog = (weightKg: number, date?: string, notes?: string) => {
+    const entryDate = date || new Date().toISOString().split('T')[0];
+    const newLog: BodyWeightLog = {
+      id: `bw_${Date.now()}`,
+      date: entryDate,
+      weightKg,
+      notes,
+      time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setBodyWeightLogs(prev => [newLog, ...prev.filter(b => b.date !== entryDate)]);
+    
+    // Also update active profile weight so Mifflin-St Jeor calculators react immediately
+    updateUserProfile({ weightKg });
+
+    // Save to Neon Cloud
+    cloudSaveBodyWeightLog(newLog).catch(err => console.error('Cloud body weight save failed:', err));
+  };
+
+  const deleteBodyWeightLog = (id: string) => {
+    setBodyWeightLogs(prev => prev.filter(b => b.id !== id));
+    cloudDeleteBodyWeightLog(id).catch(err => console.error('Cloud body weight delete failed:', err));
   };
 
   // Rest Timer handlers
@@ -604,7 +820,9 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const updateUserProfile = (profile: Partial<UserProfile>) => {
-    setUserProfile(prev => ({ ...prev, ...profile }));
+    const updated = { ...userProfile, ...profile };
+    setUserProfile(updated);
+    cloudSaveProfile(updated).catch(err => console.error('Cloud profile save failed:', err));
   };
 
   const exportDataJSON = () => {
@@ -614,7 +832,8 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       userProfile,
       personalRecords,
       workoutHistory,
-      completedExercises
+      completedExercises,
+      bodyWeightLogs
     };
     return JSON.stringify(backupData, null, 2);
   };
@@ -626,10 +845,72 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (parsed.personalRecords) setPersonalRecords(parsed.personalRecords);
       if (parsed.workoutHistory) setWorkoutHistory(parsed.workoutHistory);
       if (parsed.completedExercises) setCompletedExercises(parsed.completedExercises);
+      if (parsed.bodyWeightLogs) setBodyWeightLogs(parsed.bodyWeightLogs);
       return true;
     } catch (e) {
       console.error('Error importing data:', e);
       return false;
+    }
+  };
+
+  // CSV Exporter by Date Range
+  const exportDataCSV = (startDate?: string, endDate?: string, type: 'workouts' | 'bodyweight' | 'all' = 'all') => {
+    const start = startDate ? new Date(startDate).getTime() : 0;
+    const end = endDate ? new Date(endDate + 'T23:59:59').getTime() : Infinity;
+
+    if (type === 'workouts' || type === 'all') {
+      // Filter sessions
+      const filteredSessions = workoutHistory.filter(s => {
+        const time = new Date(s.startTime).getTime();
+        return time >= start && time <= end;
+      });
+
+      let csv = '\uFEFFFecha,Dia_ID,Rutina,Duracion_Minutos,Volumen_Total_KG,Series_Totales,Ejercicio,Maquina,Serie_Numero,Peso_KG,Repeticiones,RIR,1RM_Estimado_KG,Volumen_Serie_KG,Completada,Rating_Sesion,Notas\n';
+
+      filteredSessions.forEach(session => {
+        const dateFormatted = new Date(session.startTime).toISOString().split('T')[0];
+        const durationMin = (session.durationSeconds / 60).toFixed(1);
+        const notesClean = (session.notes || '').replace(/"/g, '""');
+
+        session.exercises.forEach(ex => {
+          ex.sets.forEach(set => {
+            const e1rm = calculate1RM(set.weight, set.reps);
+            const setVolume = (set.weight * set.reps).toFixed(1);
+            csv += `"${dateFormatted}","${session.dayId}","${session.dayTitle}",${durationMin},${session.totalVolumeKg},${session.totalSetsCompleted},"${ex.exerciseName}","${ex.machine}",${set.setNumber},${set.weight},${set.reps},${set.rir ?? ''},${e1rm},${setVolume},${set.completed ? 'SI' : 'NO'},${session.rating || 5},"${notesClean}"\n`;
+          });
+        });
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `smartfit_entrenamientos_${startDate || 'inicio'}_a_${endDate || 'hoy'}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    if (type === 'bodyweight' || type === 'all') {
+      const filteredBw = bodyWeightLogs.filter(b => {
+        const time = new Date(b.date).getTime();
+        return time >= start && time <= end;
+      });
+
+      let csvBw = '\uFEFFFecha,Peso_KG,Altura_CM,IMC_Calculado,Notas\n';
+      filteredBw.forEach(b => {
+        const heightM = userProfile.heightCm / 100;
+        const imc = heightM > 0 ? (b.weightKg / (heightM * heightM)).toFixed(1) : '';
+        const notesClean = (b.notes || '').replace(/"/g, '""');
+        csvBw += `"${b.date}",${b.weightKg},${userProfile.heightCm},${imc},"${notesClean}"\n`;
+      });
+
+      const blob = new Blob([csvBw], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `smartfit_peso_corporal_${startDate || 'inicio'}_a_${endDate || 'hoy'}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
   };
 
@@ -638,6 +919,7 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setUserProfile(INITIAL_PROFILE);
       setPersonalRecords(INITIAL_PRS);
       setWorkoutHistory([]);
+      setBodyWeightLogs(INITIAL_BW_LOGS);
       setCompletedExercises({});
       setActiveSession(null);
       resetRestTimer();
@@ -662,6 +944,9 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       deletePR,
       workoutHistory,
       deleteWorkoutSession,
+      bodyWeightLogs,
+      addBodyWeightLog,
+      deleteBodyWeightLog,
       restTimer,
       startRestTimer,
       pauseRestTimer,
@@ -670,8 +955,13 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       adjustRestTimer,
       userProfile,
       updateUserProfile,
+      isCloudConnected,
+      isSyncing,
+      lastSyncedAt,
+      syncWithNeonCloud,
       exportDataJSON,
       importDataJSON,
+      exportDataCSV,
       resetAllData,
       isLiveModalOpen,
       setIsLiveModalOpen

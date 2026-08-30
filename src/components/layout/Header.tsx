@@ -1,6 +1,6 @@
 import React from 'react';
 import { useWorkout } from '../../context/WorkoutContext';
-import { Menu, Play, Trophy, Sparkles, Dumbbell, Settings } from 'lucide-react';
+import { Menu, Play, Trophy, Sparkles, Dumbbell, Settings, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { routineData } from '../../data/routineData';
 
 interface HeaderProps {
@@ -9,10 +9,22 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenSettings }) => {
-  const { activeTab, activeSession, setIsLiveModalOpen, startLiveWorkout, personalRecords, workoutHistory } = useWorkout();
+  const { 
+    activeTab, 
+    activeSession, 
+    setIsLiveModalOpen, 
+    startLiveWorkout, 
+    personalRecords, 
+    workoutHistory,
+    isCloudConnected,
+    isSyncing,
+    lastSyncedAt,
+    syncWithNeonCloud
+  } = useWorkout();
 
   const getTitle = () => {
     if (activeTab === 'dashboard') return 'Dashboard Principal';
+    if (activeTab === 'tracking') return 'Bitácora de Sesiones & Peso Corporal';
     if (activeTab === 'prs') return 'Tops & Récords Personales';
     if (activeTab === 'history') return 'Historial de Entrenamientos';
     if (activeTab === 'nutrition') return 'Evaluación Fisiológica & Nutrición';
@@ -23,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenSettings
     }
     return 'Ecosistema Smart Fit';
   };
+
 
   const totalPRs = Object.keys(personalRecords).length;
   const totalWorkouts = workoutHistory.length;
@@ -42,9 +55,30 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenSettings
           <h2 className="text-base sm:text-lg font-bold text-white tracking-tight truncate flex items-center gap-2">
             {getTitle()}
           </h2>
-          <p className="text-[11px] font-mono text-zinc-400 hidden sm:block">
-            Smart Fit · Entrenamiento Hipertrofia & Rendimiento
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] font-mono text-zinc-400 hidden sm:block">
+              Smart Fit · Entrenamiento Hipertrofia & Rendimiento
+            </p>
+            {/* Neon Cloud Status Badge */}
+            <button
+              onClick={() => syncWithNeonCloud()}
+              className={`hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono border transition-all ${
+                isCloudConnected
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                  : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200'
+              }`}
+              title={`Neon PostgreSQL: ${isCloudConnected ? 'Conectado' : 'Sin conexión'} ${lastSyncedAt ? `(Sincronizado: ${lastSyncedAt})` : ''} · Clic para forzar sincronización`}
+            >
+              {isSyncing ? (
+                <RefreshCw size={10} className="animate-spin text-yellow-400" />
+              ) : isCloudConnected ? (
+                <Cloud size={10} className="text-emerald-400" />
+              ) : (
+                <CloudOff size={10} className="text-zinc-500" />
+              )}
+              <span>{isSyncing ? 'Sincronizando...' : isCloudConnected ? 'Neon Cloud' : 'Local'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -56,7 +90,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenSettings
             <Trophy size={14} />
             <span>{totalPRs} Tops</span>
           </div>
-          <span className="text-zinc-700">|</span>
           <div className="flex items-center gap-1.5 text-zinc-300" title="Sesiones completadas">
             <Dumbbell size={14} className="text-zinc-400" />
             <span>{totalWorkouts} Sesiones</span>
@@ -64,6 +97,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenSettings
         </div>
 
         {/* Active workout resume or Start Button */}
+
         {activeSession ? (
           <button
             onClick={() => setIsLiveModalOpen(true)}

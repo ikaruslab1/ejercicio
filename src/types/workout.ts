@@ -109,3 +109,12 @@ export interface ContingencyItem {
   biomechanicalLogic: string;
   smartFitTip: string;
 }
+
+export interface BodyWeightLog {
+  id: string;
+  date: string; // YYYY-MM-DD
+  weightKg: number;
+  notes?: string;
+  time?: string;
+}
+

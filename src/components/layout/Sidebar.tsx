@@ -11,7 +11,8 @@ import {
   Settings, 
   PlayCircle,
   Flame,
-  X
+  X,
+  CalendarDays
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -36,9 +37,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onOpenSetting
   ];
 
   const performanceItems = [
+    { id: 'tracking', label: 'Bitácora & Peso Corporal', icon: CalendarDays, badge: 'Métricas' },
     { id: 'prs', label: 'Tops & Récords (PRs)', icon: Trophy, badge: 'Marcas' },
     { id: 'history', label: 'Historial de Sesiones', icon: History },
   ];
+
 
   const knowledgeItems = [
     { id: 'nutrition', label: 'Nutrición & Suplementación', icon: Utensils },

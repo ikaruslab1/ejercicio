@@ -12,6 +12,7 @@ import { HistoryView } from './components/history/HistoryView';
 import { NutritionView } from './components/nutrition/NutritionView';
 import { OptimizationView } from './components/optimization/OptimizationView';
 import { ContingencyView } from './components/contingency/ContingencyView';
+import { DayTrackingView } from './components/tracking/DayTrackingView';
 
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useWorkout();
@@ -50,6 +51,7 @@ const MainLayout: React.FC = () => {
               onOpenContingencyWithExercise={handleOpenContingencyWithExercise}
             />
           )}
+          {activeTab === 'tracking' && <DayTrackingView />}
           {activeTab === 'prs' && <PRTrackerView />}
           {activeTab === 'history' && <HistoryView />}
           {activeTab === 'nutrition' && <NutritionView />}
@@ -57,6 +59,7 @@ const MainLayout: React.FC = () => {
           {activeTab === 'contingency' && (
             <ContingencyView initialSearchQuery={contingencySearchQuery} />
           )}
+
 
           {/* Inspirational UNAM & Mead Footer */}
           <footer className="mt-16 pt-8 border-t border-zinc-900 text-center text-zinc-500 text-xs sm:text-sm">

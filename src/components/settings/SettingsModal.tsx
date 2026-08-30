@@ -17,7 +17,18 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { userProfile, updateUserProfile, exportDataJSON, importDataJSON, resetAllData } = useWorkout();
+  const { 
+    userProfile, 
+    updateUserProfile, 
+    exportDataJSON, 
+    importDataJSON, 
+    resetAllData,
+    isCloudConnected,
+    isSyncing,
+    lastSyncedAt,
+    syncWithNeonCloud
+  } = useWorkout();
+
 
   const [name, setName] = useState(userProfile.name);
   const [age, setAge] = useState(userProfile.age);
@@ -226,8 +237,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           </div>
         </div>
 
+        {/* Neon PostgreSQL Cloud Sync Card */}
+        <div className="bg-zinc-950/80 border border-zinc-800 p-4 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isCloudConnected ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                Neon PostgreSQL Cloud (Vercel)
+              </h4>
+            </div>
+            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+              isCloudConnected 
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
+                : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+            }`}>
+              {isCloudConnected ? 'Conectado 🟢' : 'Modo Local'}
+            </span>
+          </div>
+
+          <div className="text-[11px] font-mono text-zinc-400 space-y-1 bg-zinc-900/60 p-2.5 rounded-xl border border-zinc-800/80">
+            <p className="truncate"><span className="text-zinc-500">Host:</span> ep-mute-night-ah7v3nbz-pooler.c-3.us-east-1.aws.neon.tech</p>
+            <p><span className="text-zinc-500">Base de Datos:</span> neondb · PostgreSQL 17</p>
+            {lastSyncedAt && <p><span className="text-zinc-500">Última Sincronización:</span> {lastSyncedAt}</p>}
+          </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const ok = await syncWithNeonCloud();
+              if (ok) {
+                showNotification('Sincronizado con Neon PostgreSQL correctamente.');
+              } else {
+                showNotification('Error al conectar con la base de datos Neon.');
+              }
+            }}
+            disabled={isSyncing}
+            className="w-full py-2 bg-zinc-900 hover:bg-zinc-800 active:scale-95 text-yellow-400 text-xs font-bold rounded-xl border border-yellow-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+          >
+            {isSyncing ? 'Sincronizando...' : 'Forzar Sincronización con la Nube'}
+          </button>
+        </div>
+
         {/* Danger Zone */}
         <div className="pt-4 border-t border-zinc-800">
+
           <button
             onClick={resetAllData}
             className="w-full py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold rounded-xl border border-red-500/30 flex items-center justify-center gap-1.5 transition-all"
