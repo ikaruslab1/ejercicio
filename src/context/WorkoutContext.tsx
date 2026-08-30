@@ -425,39 +425,35 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
         cloudFetchBodyWeightLogs()
       ]);
 
-      // Merge Cloud PRs
+      // Set Cloud PRs as authoritative
       if (cloudPrs && Object.keys(cloudPrs).length > 0) {
-        setPersonalRecords(prev => ({ ...prev, ...cloudPrs }));
-      } else {
+        setPersonalRecords(cloudPrs);
+        localStorage.setItem('sf_personal_records', JSON.stringify(cloudPrs));
+      } else if (Object.keys(personalRecords).length > 0) {
         Object.values(personalRecords).forEach(pr => cloudSavePR(pr));
       }
 
-      // Merge Cloud Workout History
+      // Set Cloud Workout History as authoritative
       if (cloudHistory && cloudHistory.length > 0) {
-        setWorkoutHistory(prev => {
-          const ids = new Set(prev.map(s => s.id));
-          const newFromCloud = cloudHistory.filter(s => !ids.has(s.id));
-          return [...prev, ...newFromCloud].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-        });
-      } else {
+        setWorkoutHistory(cloudHistory);
+        localStorage.setItem('sf_workout_history', JSON.stringify(cloudHistory));
+      } else if (workoutHistory.length > 0) {
         workoutHistory.forEach(s => cloudSaveWorkoutSession(s));
       }
 
-      // Merge Profile
+      // Set Cloud Profile as authoritative
       if (cloudProfile) {
-        setUserProfile(prev => ({ ...prev, ...cloudProfile }));
+        setUserProfile(cloudProfile);
+        localStorage.setItem('sf_user_profile', JSON.stringify(cloudProfile));
       } else {
         cloudSaveProfile(userProfile);
       }
 
-      // Merge Body Weight Logs
+      // Set Cloud Body Weight Logs as authoritative
       if (cloudBw && cloudBw.length > 0) {
-        setBodyWeightLogs(prev => {
-          const ids = new Set(prev.map(b => b.id));
-          const newFromCloud = cloudBw.filter(b => !ids.has(b.id));
-          return [...prev, ...newFromCloud].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        });
-      } else {
+        setBodyWeightLogs(cloudBw);
+        localStorage.setItem('sf_body_weight_logs', JSON.stringify(cloudBw));
+      } else if (bodyWeightLogs.length > 0) {
         bodyWeightLogs.forEach(b => cloudSaveBodyWeightLog(b));
       }
 
@@ -473,6 +469,7 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return false;
     }
   }, [personalRecords, workoutHistory, userProfile, bodyWeightLogs]);
+
 
   // Initial mount sync
   useEffect(() => {

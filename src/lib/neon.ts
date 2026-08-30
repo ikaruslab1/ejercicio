@@ -6,8 +6,11 @@ import type {
   BodyWeightLog
 } from '../types/workout';
 
-// Connection string from env or fallback to provided Neon database URL
+declare const __NEON_DATABASE_URL__: string | undefined;
+
+// Connection string from Vite define, env, or verified Neon cloud endpoint
 const connectionString = 
+  (typeof __NEON_DATABASE_URL__ !== 'undefined' && __NEON_DATABASE_URL__) ||
   import.meta.env.VITE_NEON_DATABASE_URL || 
   'postgresql://neondb_owner:npg_4CcXLBt9SOKj@ep-mute-night-ah7v3nbz-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require';
 
@@ -18,6 +21,7 @@ try {
 } catch (e) {
   console.warn('Neon client initialization error:', e);
 }
+
 
 export const checkNeonHealth = async (): Promise<{ ok: boolean; latencyMs: number; error?: string }> => {
   if (!sqlClient) return { ok: false, latencyMs: 0, error: 'Cliente Neon no inicializado' };
