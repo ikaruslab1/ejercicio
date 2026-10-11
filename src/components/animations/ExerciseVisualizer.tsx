@@ -338,41 +338,120 @@ export const ExerciseVisualizer: React.FC<ExerciseVisualizerProps> = ({
           </svg>
         );
 
-      case '1-3': // Cable Crossover (Área Gris)
+      case '1-3': // Press de Banca Inclinado (Banco Inclinado con Barra)
         return (
           <svg viewBox="0 0 440 280" className="w-full h-full">
             {renderCommonDefs()}
-            {/* Dual Swivel Pulley Towers */}
-            <rect x="20" y="20" width="26" height="235" rx="6" fill="url(#machineChassis)" stroke="#52525b" strokeWidth="2" />
-            <rect x="394" y="20" width="26" height="235" rx="6" fill="url(#machineChassis)" stroke="#52525b" strokeWidth="2" />
-            
-            {/* Swivel Pulley Heads with Yellow Accent Adjusters */}
-            <circle cx="33" cy="45" r="12" fill="url(#steelBar)" stroke="#000" strokeWidth="1.5" />
-            <circle cx="33" cy="45" r="4" fill="url(#sfYellowAccent)" />
-            <circle cx="407" cy="45" r="12" fill="url(#steelBar)" stroke="#000" strokeWidth="1.5" />
-            <circle cx="407" cy="45" r="4" fill="url(#sfYellowAccent)" />
 
-            {/* Staggered Standing Body */}
-            <path d="M 220 155 L 255 205 L 260 250" stroke="url(#bodySkinDark)" strokeWidth="18" strokeLinecap="round" />
-            <circle cx="210" cy="65" r="17" fill="url(#bodySkin)" />
-            <path d="M 205 80 C 200 115, 205 145, 215 160" stroke="url(#bodySkin)" strokeWidth="28" strokeLinecap="round" />
-            <path d="M 204 92 Q 220 102 215 125" stroke="url(#goldMuscle)" strokeWidth="14" strokeLinecap="round" filter="url(#glowEffect)" />
-            
-            <path d="M 215 160 L 185 205 L 180 250" stroke="url(#bodySkin)" strokeWidth="20" strokeLinecap="round" />
+            {/* Floor Foundation */}
+            <line x1="30" y1="248" x2="410" y2="248" stroke="#3f3f46" strokeWidth="3" />
 
-            {/* Crossing Cable System */}
+            {/* Olympic Upright Rack Frame (Background in shadow) */}
+            <g stroke="#52525b" strokeWidth="1.5">
+              {/* Far Upright Post */}
+              <rect x="305" y="45" width="16" height="203" rx="4" fill="url(#machineChassis)" />
+              {/* Far Stepped Bar Catch Hooks */}
+              <path d="M 305 75 L 297 78 L 297 84 L 305 84 Z" fill="#71717a" stroke="#27272a" />
+              <path d="M 305 100 L 297 103 L 297 109 L 305 109 Z" fill="#71717a" stroke="#27272a" />
+              <path d="M 305 125 L 297 128 L 297 134 L 305 134 Z" fill="#71717a" stroke="#27272a" />
+
+              {/* Near Upright Post */}
+              <rect x="175" y="60" width="16" height="188" rx="4" fill="url(#machineChassis)" />
+              {/* Near Stepped Bar Catch Hooks */}
+              <path d="M 175 90 L 167 93 L 167 99 L 175 99 Z" fill="#71717a" stroke="#27272a" />
+              <path d="M 175 115 L 167 118 L 167 124 L 175 124 Z" fill="#71717a" stroke="#27272a" />
+              <path d="M 175 140 L 167 143 L 167 149 L 175 149 Z" fill="#71717a" stroke="#27272a" />
+
+              {/* Base Rack Connecting Beams */}
+              <line x1="160" y1="248" x2="330" y2="248" stroke="url(#machineChassis)" strokeWidth="12" strokeLinecap="round" />
+            </g>
+
+            {/* Incline Bench Main Steel Chassis */}
+            <line x1="150" y1="205" x2="285" y2="100" stroke="url(#machineChassis)" strokeWidth="14" strokeLinecap="round" />
+            <line x1="150" y1="205" x2="135" y2="248" stroke="url(#machineChassis)" strokeWidth="10" strokeLinecap="round" />
+            <line x1="265" y1="118" x2="265" y2="248" stroke="url(#machineChassis)" strokeWidth="10" strokeLinecap="round" />
+
+            {/* Incline Bench Leather Backrest Pad (Angled ~35°) */}
+            <g transform="rotate(-38 220 155)">
+              <rect x="140" y="146" width="160" height="20" rx="6" fill="url(#leatherUpholstery)" stroke="#eab308" strokeWidth="1.5" />
+              <line x1="150" y1="156" x2="290" y2="156" stroke="#3f3f46" strokeWidth="1.5" strokeDasharray="5 3" />
+            </g>
+
+            {/* Incline Bench Seat Pad */}
+            <rect x="130" y="195" width="38" height="16" rx="4" transform="rotate(-15 130 195)" fill="url(#leatherUpholstery)" stroke="#52525b" strokeWidth="1.5" />
+            <circle cx="210" cy="180" r="4.5" fill="url(#sfYellowAccent)" stroke="#000" strokeWidth="1" />
+
+            {/* Lifter Far Leg (In Shadow) */}
+            <path d="M 160 190 L 190 205 L 202 248" stroke="url(#bodySkinDark)" strokeWidth="16" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <rect x="194" y="242" width="22" height="7" rx="2" fill="#1e293b" />
+
+            {/* Lifter Torso & Core on Incline Bench */}
+            <ellipse cx="160" cy="190" rx="20" ry="16" fill="url(#athleticShorts)" />
+            <path d="M 165 185 C 190 165, 230 130, 252 110" stroke="url(#bodySkin)" strokeWidth="28" strokeLinecap="round" fill="none" />
+
+            {/* Lifter Near Leg (Planting Foot on Ground) */}
+            <path d="M 160 190 L 132 208" stroke="url(#bodySkin)" strokeWidth="22" strokeLinecap="round" fill="none" />
+            <circle cx="132" cy="208" r="9" fill="url(#bodySkin)" />
+            <path d="M 132 208 L 122 248" stroke="url(#bodySkin)" strokeWidth="18" strokeLinecap="round" fill="none" />
+            <path d="M 110 244 L 138 244 C 142 244, 143 248, 140 250 L 108 250 Z" fill="url(#sfYellowAccent)" stroke="#000" strokeWidth="1.2" />
+
+            {/* Head Resting on Incline Pad */}
+            <g transform="translate(260, 75)">
+              <circle cx="14" cy="14" r="14" fill="url(#bodySkin)" />
+              <path d="M 2 14 L -4 16 L 0 20" stroke="url(#bodySkin)" strokeWidth="2.5" fill="none" />
+              <path d="M 10 0 C 20 0, 26 8, 26 18" stroke="#1e293b" strokeWidth="4.5" strokeLinecap="round" fill="none" />
+              <path d="M 6 22 L -4 32" stroke="url(#bodySkin)" strokeWidth="12" strokeLinecap="round" />
+            </g>
+
+            {/* Lower Pectorals & Sternum */}
+            <path d="M 210 148 C 228 135, 245 128, 252 135" stroke="url(#bodySkinDark)" strokeWidth="10" strokeLinecap="round" fill="none" />
+
+            {/* Upper Chest (Clavicular Head of Pectoralis Major) - Highlighted in Blue */}
+            <path 
+              d="M 230 126 C 242 114, 258 108, 266 116 C 262 128, 246 138, 230 135 Z" 
+              fill="url(#blueMuscle)" 
+              filter="url(#glowEffect)"
+              className="animate-pulse"
+            />
+            {/* Clavicle Bone Accent */}
+            <path d="M 248 108 L 268 116" stroke="#93c5fd" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.8" />
+
+            {/* Animated Pressing Arms and Olympic Barbell */}
             <g style={{
-              animation: `cableCrossover ${animDuration} ease-in-out infinite`,
+              animation: `inclineBarbellPress ${animDuration} ease-in-out infinite`,
               animationPlayState: playState
             }}>
-              <line x1="33" y1="45" x2="200" y2="155" stroke="#cbd5e1" strokeWidth="3" strokeDasharray="4 2" />
-              <line x1="407" y1="45" x2="225" y2="155" stroke="#cbd5e1" strokeWidth="3" strokeDasharray="4 2" />
-              <path d="M 200 92 C 155 105, 145 130, 200 155" fill="none" stroke="url(#bodySkin)" strokeWidth="16" strokeLinecap="round" />
-              <circle cx="200" cy="155" r="8" fill="#facc15" stroke="#000" strokeWidth="1.5" />
-              <path d="M 218 92 C 265 105, 275 130, 225 155" fill="none" stroke="url(#bodySkin)" strokeWidth="16" strokeLinecap="round" />
-              <circle cx="225" cy="155" r="8" fill="#facc15" stroke="#000" strokeWidth="1.5" />
+              {/* Right Arm (Far side) */}
+              <path d="M 270 108 L 295 118 L 310 92" stroke="url(#bodySkinDark)" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              <ellipse cx="310" cy="92" rx="6" ry="5" fill="#facc15" stroke="#000" strokeWidth="1" />
+
+              {/* Left Arm (Near side) */}
+              <path d="M 252 118 L 226 132 L 216 90" stroke="url(#bodySkin)" strokeWidth="17" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              <ellipse cx="216" cy="90" rx="7" ry="6" fill="#facc15" stroke="#000" strokeWidth="1" />
+
+              {/* Olympic Barbell Shaft */}
+              <line x1="75" y1="78" x2="385" y2="105" stroke="url(#chromeSteel)" strokeWidth="5.5" strokeLinecap="round" />
+              {/* Knurled Grip Markings */}
+              <line x1="165" y1="86" x2="235" y2="92" stroke="#a1a1aa" strokeWidth="6" strokeDasharray="2 1" />
+              <line x1="285" y1="96" x2="340" y2="101" stroke="#a1a1aa" strokeWidth="6" strokeDasharray="2 1" />
+
+              {/* Barbell Sleeve Collars */}
+              <rect x="105" y="72" width="7" height="18" rx="1.5" fill="#71717a" stroke="#000" strokeWidth="1" />
+              <rect x="352" y="94" width="7" height="18" rx="1.5" fill="#71717a" stroke="#000" strokeWidth="1" />
+
+              {/* Left Olympic Plates (Near Perspective) */}
+              <ellipse cx="98" cy="80" rx="12" ry="40" fill="url(#weightPlates)" stroke="#09090b" strokeWidth="2" />
+              <ellipse cx="88" cy="79" rx="11" ry="38" fill="url(#weightPlates)" stroke="#09090b" strokeWidth="2" />
+              <ellipse cx="98" cy="80" rx="4" ry="12" fill="#52525b" />
+              <text x="92" y="83" fill="#facc15" fontSize="7" fontWeight="bold" fontFamily="monospace">20</text>
+
+              {/* Right Olympic Plates (Far Perspective) */}
+              <ellipse cx="364" cy="103" rx="9" ry="32" fill="url(#weightPlates)" stroke="#09090b" strokeWidth="2" />
+              <ellipse cx="373" cy="104" rx="8" ry="30" fill="url(#weightPlates)" stroke="#09090b" strokeWidth="2" />
+              <ellipse cx="364" cy="103" rx="3" ry="10" fill="#52525b" />
             </g>
-            <text x="150" y="270" fill="#eab308" fontSize="10" fontFamily="monospace" fontWeight="bold">ÁREA GRIS · CRUCE EN POLEAS</text>
+
+            <text x="110" y="270" fill="#eab308" fontSize="10" fontFamily="monospace" fontWeight="bold">BANCO INCLINADO · PRESS CON BARRA</text>
           </svg>
         );
 
@@ -1074,9 +1153,9 @@ export const ExerciseVisualizer: React.FC<ExerciseVisualizerProps> = ({
           0%, 100% { transform: rotate(0deg); }
           35%, 50% { transform: rotate(-42deg); }
         }
-        @keyframes cableCrossover {
-          0%, 100% { transform: scale(1) translate(0, 0); }
-          35%, 50% { transform: scale(0.95) translate(0, 18px); }
+        @keyframes inclineBarbellPress {
+          0%, 100% { transform: translate(0, 0); }
+          35%, 50% { transform: translate(-14px, 32px); }
         }
         @keyframes abCrunchTorso {
           0%, 100% { transform: rotate(0deg); }
