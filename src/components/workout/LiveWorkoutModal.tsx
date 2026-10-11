@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useWorkout, calculate1RM } from '../../context/WorkoutContext';
 import { routineData } from '../../data/routineData';
 import { ExerciseVisualizer } from '../animations/ExerciseVisualizer';
@@ -13,7 +13,10 @@ import {
   Sparkles,
   PlaySquare,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  BookOpen,
+  FileText,
+  X
 } from 'lucide-react';
 
 export const LiveWorkoutModal: React.FC = () => {
@@ -24,9 +27,11 @@ export const LiveWorkoutModal: React.FC = () => {
     updateLiveSet, 
     addLiveSet, 
     removeLiveSet, 
+    updateLiveExerciseNote,
     finishLiveWorkout, 
     cancelLiveWorkout,
     personalRecords,
+    workoutHistory,
     startRestTimer,
     restTimer
   } = useWorkout();
@@ -34,6 +39,8 @@ export const LiveWorkoutModal: React.FC = () => {
   const [sessionNotes, setSessionNotes] = useState('');
   const [sessionRating, setSessionRating] = useState(5);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [showPrevNotesModal, setShowPrevNotesModal] = useState(false);
+  const [exerciseNotesAtFinish, setExerciseNotesAtFinish] = useState<Record<string, string>>({});
   const [activeAnimationExerciseId, setActiveAnimationExerciseId] = useState<string | null>(null);
 
   if (!isLiveModalOpen || !activeSession) return null;
@@ -63,8 +70,38 @@ export const LiveWorkoutModal: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Find the most recent previous session for this routine day from database history
+  const previousSession = useMemo(() => {
+    if (!activeSession) return null;
+    return (
+      workoutHistory
+        .filter(s => s.dayId === activeSession.dayId)
+        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0] || null
+    );
+  }, [activeSession?.dayId, workoutHistory]);
+
+  const previousGeneralNote = previousSession?.notes?.trim();
+  const previousExercisesWithNotes = useMemo(() => {
+    if (!previousSession?.exercises) return [];
+    return previousSession.exercises.filter(e => e.notes && e.notes.trim().length > 0);
+  }, [previousSession]);
+
+  const hasAnyPreviousNotes = Boolean(
+    (previousGeneralNote && previousGeneralNote.length > 0) ||
+    previousExercisesWithNotes.length > 0
+  );
+
+  const handleOpenFinishConfirm = () => {
+    const notesMap: Record<string, string> = {};
+    activeSession.exercises.forEach(ex => {
+      notesMap[ex.exerciseId] = ex.notes || '';
+    });
+    setExerciseNotesAtFinish(notesMap);
+    setShowFinishConfirm(true);
+  };
+
   const handleFinish = () => {
-    finishLiveWorkout(sessionNotes, sessionRating);
+    finishLiveWorkout(sessionNotes, sessionRating, exerciseNotesAtFinish);
     setShowFinishConfirm(false);
   };
 
@@ -93,8 +130,23 @@ export const LiveWorkoutModal: React.FC = () => {
           </div>
         </div>
 
-        {/* Live Metrics Pills */}
-        <div className="flex items-center gap-2 sm:gap-4">
+        {/* Live Metrics & Actions */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Button to view previous notes (only if any previous notes exist) */}
+          {hasAnyPreviousNotes && (
+            <button
+              type="button"
+              onClick={() => setShowPrevNotesModal(true)}
+              className="px-2.5 sm:px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md"
+              title="Ver notas generales y por ejercicio de la sesión anterior"
+            >
+              <BookOpen size={14} className="text-amber-400" />
+              <span className="hidden sm:inline">Notas Sesión Anterior</span>
+              <span className="sm:hidden">Notas Previas</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            </button>
+          )}
+
           <div className="hidden sm:flex items-center gap-3 bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800 text-xs font-mono">
             <div>
               <span className="text-zinc-400">Volumen: </span>
@@ -108,7 +160,7 @@ export const LiveWorkoutModal: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setShowFinishConfirm(true)}
+            onClick={handleOpenFinishConfirm}
             className="px-3 sm:px-5 py-2 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-black font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-yellow-500/20 flex items-center gap-1.5 transition-all"
           >
             <Award size={16} />
@@ -193,7 +245,7 @@ export const LiveWorkoutModal: React.FC = () => {
                   </button>
 
                   {/* PR Badge */}
-                  {currentPR && (
+                  {currentPR && currentPR.maxWeight > 0 && (
                     <div className="text-right bg-zinc-950 px-2.5 py-1 rounded-xl border border-yellow-500/30 text-xs">
                       <p className="text-[10px] text-zinc-400 font-bold uppercase">Tu Top</p>
                       <p className="font-mono font-bold text-yellow-400">
@@ -203,6 +255,26 @@ export const LiveWorkoutModal: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Previous Session Note for this Exercise (only displayed if a note was recorded) */}
+              {(() => {
+                const prevExLog = previousSession?.exercises?.find(e => e.exerciseId === exLog.exerciseId);
+                const prevExNote = prevExLog?.notes?.trim();
+                if (!prevExNote) return null;
+                return (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 flex items-start gap-2.5 animate-in fade-in">
+                    <FileText className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">
+                        Nota de tu sesión anterior:
+                      </span>
+                      <p className="text-xs text-zinc-200 mt-0.5 italic">
+                        "{prevExNote}"
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Animated Reference inside Live Workout */}
               {isAnimationOpen && exerciseDef && (
@@ -366,6 +438,21 @@ export const LiveWorkoutModal: React.FC = () => {
                 <Plus size={14} className="text-yellow-400" />
                 <span>Agregar Serie</span>
               </button>
+
+              {/* Exercise Note Input During Live Workout */}
+              <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/80 space-y-1.5">
+                <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText size={13} className="text-yellow-400" />
+                  <span>Nota de este ejercicio (opcional):</span>
+                </label>
+                <input
+                  type="text"
+                  value={exLog.notes || ''}
+                  onChange={(e) => updateLiveExerciseNote(exLog.exerciseId, e.target.value)}
+                  placeholder="P. ej. Subir peso próxima semana, tope de máquina en nivel 3..."
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500 transition-colors"
+                />
+              </div>
             </div>
           );
         })}
@@ -384,7 +471,7 @@ export const LiveWorkoutModal: React.FC = () => {
       {/* Confirmation Modal to Finish Workout */}
       {showFinishConfirm && (
         <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-yellow-500/40 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 animate-in zoom-in-95">
+          <div className="bg-zinc-900 border border-yellow-500/40 rounded-3xl p-5 sm:p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-5 animate-in zoom-in-95">
             <div className="text-center space-y-2">
               <div className="w-14 h-14 bg-yellow-500/20 text-yellow-400 rounded-2xl flex items-center justify-center mx-auto border border-yellow-500/30">
                 <Sparkles size={28} />
@@ -397,7 +484,7 @@ export const LiveWorkoutModal: React.FC = () => {
 
             {/* Rating */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+              <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block text-center">
                 ¿Cómo te sentiste hoy?
               </label>
               <div className="flex justify-center gap-2">
@@ -416,16 +503,44 @@ export const LiveWorkoutModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Notes */}
-            <div className="space-y-1.5">
+            {/* Exercise Notes Review/Edit at Finish (Requirement 4) */}
+            <div className="space-y-2 text-left">
+              <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText size={14} className="text-yellow-400" />
+                <span>Notas por Ejercicio (Opcional):</span>
+              </label>
+              <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1 border border-zinc-800/80 rounded-2xl p-2.5 bg-zinc-950/60">
+                {activeSession.exercises.map((ex) => (
+                  <div key={ex.exerciseId} className="space-y-1 bg-zinc-900/90 p-2.5 rounded-xl border border-zinc-800">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-white truncate mr-2">{ex.exerciseName}</span>
+                      <span className="text-[10px] font-mono text-zinc-500 shrink-0">{ex.machine}</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={exerciseNotesAtFinish[ex.exerciseId] || ''}
+                      onChange={(e) => setExerciseNotesAtFinish(prev => ({
+                        ...prev,
+                        [ex.exerciseId]: e.target.value
+                      }))}
+                      placeholder="Nota para este ejercicio (o escribe una aquí)..."
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-500 transition-colors"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* General Session Notes (Requirement 3) */}
+            <div className="space-y-1.5 text-left">
               <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                Notas de la sesión (Opcional):
+                Notas Generales de la Sesión (Opcional):
               </label>
               <textarea
                 value={sessionNotes}
                 onChange={(e) => setSessionNotes(e.target.value)}
-                placeholder="Sensaciones, RIR, ajustes en máquinas o cargas..."
-                rows={3}
+                placeholder="Sensaciones generales, fatiga, RIR percibido, ajustes globales..."
+                rows={2}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
               />
             </div>
@@ -447,6 +562,76 @@ export const LiveWorkoutModal: React.FC = () => {
                 Guardar y Finalizar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Previous Session Notes Reference Modal (Requirement 5 & 6) */}
+      {showPrevNotesModal && previousSession && (
+        <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-amber-500/40 rounded-3xl p-5 sm:p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl space-y-4 animate-in zoom-in-95">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl border border-amber-500/30">
+                  <BookOpen size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Notas de la Sesión Anterior</h3>
+                  <p className="text-xs text-zinc-400 font-mono">
+                    {previousSession.dayTitle} · {new Date(previousSession.startTime).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrevNotesModal(false)}
+                className="p-1.5 text-zinc-400 hover:text-white rounded-xl hover:bg-zinc-800 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 pt-1">
+              {/* General Note if exists */}
+              {previousGeneralNote && (
+                <div className="bg-zinc-950/80 p-3.5 rounded-2xl border border-zinc-800 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-yellow-400 flex items-center gap-1.5">
+                    <FileText size={12} /> Nota General de la Sesión
+                  </span>
+                  <p className="text-xs text-zinc-200 leading-relaxed italic">
+                    "{previousGeneralNote}"
+                  </p>
+                </div>
+              )}
+
+              {/* Exercise Notes if exist */}
+              {previousExercisesWithNotes.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                    Notas por Ejercicio de la Sesión Anterior:
+                  </span>
+                  {previousExercisesWithNotes.map(prevEx => (
+                    <div key={prevEx.exerciseId} className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800 space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-white">{prevEx.exerciseName}</span>
+                        <span className="text-[10px] font-mono text-zinc-500">{prevEx.machine}</span>
+                      </div>
+                      <p className="text-xs text-amber-300/90 italic">
+                        "{prevEx.notes}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPrevNotesModal(false)}
+              className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl transition-colors"
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}

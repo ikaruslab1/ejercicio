@@ -20,7 +20,7 @@ interface RoutineViewProps {
 }
 
 export const RoutineView: React.FC<RoutineViewProps> = ({ dayId, onOpenContingencyWithExercise }) => {
-  const { startLiveWorkout, completedExercises, recordPR } = useWorkout();
+  const { startLiveWorkout, completedExercises, recordPR, personalRecords } = useWorkout();
   const day = routineData[dayId];
 
   // Quick PR Modal state
@@ -145,8 +145,8 @@ export const RoutineView: React.FC<RoutineViewProps> = ({ dayId, onOpenContingen
               onOpenAnimationModal={(ex) => setAnimatedExercise(ex)}
               onQuickLogPR={(ex) => {
                 setSelectedExerciseForPR(ex);
-                setPrWeight(50);
-                setPrReps(8);
+                setPrWeight(personalRecords[ex.id]?.maxWeight || 50);
+                setPrReps(personalRecords[ex.id]?.repsAtMaxWeight || 8);
               }}
             />
           ))}

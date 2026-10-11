@@ -189,6 +189,12 @@ export const HistoryView: React.FC = () => {
                             <span className="text-zinc-500 font-mono">{ex.machine}</span>
                           </div>
 
+                          {ex.notes && ex.notes.trim() && (
+                            <p className="text-xs text-amber-300/90 italic bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-xl">
+                              📝 <strong className="not-italic text-amber-400">Nota: </strong>{ex.notes}
+                            </p>
+                          )}
+
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {ex.sets.map((set, sIdx) => (
                               <div 

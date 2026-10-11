@@ -5,6 +5,7 @@ import type {
   UserProfile, 
   MuscleGroup, 
   WorkoutExerciseLog,
+  WorkoutSetLog,
   BodyWeightLog
 } from '../types/workout';
 import { routineData } from '../data/routineData';
@@ -47,11 +48,12 @@ interface WorkoutContextType {
   // Active Workout Mode
   activeSession: ActiveSessionState | null;
   startLiveWorkout: (dayId: string) => void;
-  finishLiveWorkout: (notes?: string, rating?: number) => void;
+  finishLiveWorkout: (notes?: string, rating?: number, exerciseNotes?: Record<string, string>) => void;
   cancelLiveWorkout: () => void;
   updateLiveSet: (exerciseId: string, setIndex: number, weight: number, reps: number, rir?: number, completed?: boolean) => void;
   addLiveSet: (exerciseId: string) => void;
   removeLiveSet: (exerciseId: string, setIndex: number) => void;
+  updateLiveExerciseNote: (exerciseId: string, note: string) => void;
 
   // PRs / Tops
   personalRecords: Record<string, PersonalRecord>;
@@ -116,71 +118,7 @@ const INITIAL_PROFILE: UserProfile = {
   activityFactor: 1.55,
 };
 
-const INITIAL_PRS: Record<string, PersonalRecord> = {
-  '1-1': {
-    exerciseId: '1-1',
-    exerciseName: 'Chest Press',
-    muscleGroup: 'Pectorales',
-    maxWeight: 75,
-    repsAtMaxWeight: 8,
-    estimated1RM: calculate1RM(75, 8),
-    achievedDate: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
-    history: [
-      { date: new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0], weight: 70, reps: 10, estimated1RM: calculate1RM(70, 10) },
-      { date: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0], weight: 75, reps: 8, estimated1RM: calculate1RM(75, 8) }
-    ]
-  },
-  '2-1': {
-    exerciseId: '2-1',
-    exerciseName: 'Lat Pulldown',
-    muscleGroup: 'Espalda',
-    maxWeight: 68,
-    repsAtMaxWeight: 10,
-    estimated1RM: calculate1RM(68, 10),
-    achievedDate: new Date(Date.now() - 6 * 86400000).toISOString().split('T')[0],
-    history: [
-      { date: new Date(Date.now() - 13 * 86400000).toISOString().split('T')[0], weight: 63.5, reps: 12, estimated1RM: calculate1RM(63.5, 12) },
-      { date: new Date(Date.now() - 6 * 86400000).toISOString().split('T')[0], weight: 68, reps: 10, estimated1RM: calculate1RM(68, 10) }
-    ]
-  },
-  '4-1': {
-    exerciseId: '4-1',
-    exerciseName: 'Linear Hack Squat',
-    muscleGroup: 'Piernas',
-    maxWeight: 120,
-    repsAtMaxWeight: 8,
-    estimated1RM: calculate1RM(120, 8),
-    achievedDate: new Date(Date.now() - 4 * 86400000).toISOString().split('T')[0],
-    history: [
-      { date: new Date(Date.now() - 11 * 86400000).toISOString().split('T')[0], weight: 110, reps: 10, estimated1RM: calculate1RM(110, 10) },
-      { date: new Date(Date.now() - 4 * 86400000).toISOString().split('T')[0], weight: 120, reps: 8, estimated1RM: calculate1RM(120, 8) }
-    ]
-  },
-  '3-1': {
-    exerciseId: '3-1',
-    exerciseName: 'Shoulder Press',
-    muscleGroup: 'Hombros',
-    maxWeight: 45,
-    repsAtMaxWeight: 10,
-    estimated1RM: calculate1RM(45, 10),
-    achievedDate: new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0],
-    history: [
-      { date: new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0], weight: 45, reps: 10, estimated1RM: calculate1RM(45, 10) }
-    ]
-  },
-  '5-1': {
-    exerciseId: '5-1',
-    exerciseName: 'Copa con Mancuerna',
-    muscleGroup: 'Brazos',
-    maxWeight: 28,
-    repsAtMaxWeight: 12,
-    estimated1RM: calculate1RM(28, 12),
-    achievedDate: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
-    history: [
-      { date: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0], weight: 28, reps: 12, estimated1RM: calculate1RM(28, 12) }
-    ]
-  }
-};
+const INITIAL_PRS: Record<string, PersonalRecord> = {};
 
 const INITIAL_BW_LOGS: BodyWeightLog[] = [
   {
@@ -220,9 +158,18 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [personalRecords, setPersonalRecords] = useState<Record<string, PersonalRecord>>(() => {
     try {
       const saved = localStorage.getItem('sf_personal_records');
-      return saved ? JSON.parse(saved) : INITIAL_PRS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Clear out legacy hardcoded 75kg seed if found
+        if (parsed['1-1']?.maxWeight === 75 && parsed['1-1']?.achievedDate?.includes('2026-08-22')) {
+          localStorage.removeItem('sf_personal_records');
+          return {};
+        }
+        return parsed;
+      }
+      return {};
     } catch {
-      return INITIAL_PRS;
+      return {};
     }
   });
 
@@ -488,22 +435,58 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const routine = routineData[dayId];
     if (!routine) return;
 
+    // Retrieve previous session from workout history (sourced from database)
+    let history = workoutHistory;
+    if (!history || history.length === 0) {
+      try {
+        const saved = localStorage.getItem('sf_workout_history');
+        if (saved) history = JSON.parse(saved);
+      } catch {}
+    }
+
+    const previousSession = history
+      .filter(s => s.dayId === dayId)
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0];
+
     const initialExerciseLogs: WorkoutExerciseLog[] = routine.exercises.map(ex => {
-      const targetSetsCount = ex.targetSets || 3;
-      const sets = Array.from({ length: targetSetsCount }, (_, idx) => ({
-        setNumber: idx + 1,
-        weight: personalRecords[ex.id]?.maxWeight || 0,
-        reps: parseInt(ex.targetReps.split('-')[0]) || 10,
-        rir: 2,
-        completed: false,
-        timestamp: new Date().toISOString()
-      }));
+      // Find this exercise in the previous session
+      const prevExLog = previousSession?.exercises?.find(e => e.exerciseId === ex.id);
+
+      let sets: WorkoutSetLog[] = [];
+
+      if (prevExLog && Array.isArray(prevExLog.sets) && prevExLog.sets.length > 0) {
+        // Pre-fill sets, weights, and reps directly from the most recent session from the database
+        sets = prevExLog.sets.map((prevSet, idx) => ({
+          setNumber: idx + 1,
+          weight: Number(prevSet.weight) || 0,
+          reps: Number(prevSet.reps) || 10,
+          rir: prevSet.rir !== undefined ? prevSet.rir : 2,
+          completed: false, // Ready to be performed in the new workout
+          timestamp: new Date().toISOString()
+        }));
+      } else {
+        // Fallback if no previous session for this routine day or newly added exercise:
+        // Use top weight from DB if available, else 0, and target reps
+        const targetSetsCount = ex.targetSets || 3;
+        const defaultWeight = personalRecords[ex.id]?.maxWeight || 0;
+        const defaultReps = parseInt(ex.targetReps.split('-')[0]) || 10;
+
+        sets = Array.from({ length: targetSetsCount }, (_, idx) => ({
+          setNumber: idx + 1,
+          weight: defaultWeight,
+          reps: defaultReps,
+          rir: 2,
+          completed: false,
+          timestamp: new Date().toISOString()
+        }));
+      }
 
       return {
         exerciseId: ex.id,
         exerciseName: ex.name,
         machine: ex.machine,
-        sets
+        sets,
+        notes: '' // Start fresh for current session notes
       };
     });
 
@@ -615,6 +598,19 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
+  const updateLiveExerciseNote = (exerciseId: string, note: string) => {
+    setActiveSession(prev => {
+      if (!prev) return null;
+      const updated = prev.exercises.map(ex => {
+        if (ex.exerciseId !== exerciseId) return ex;
+        return { ...ex, notes: note };
+      });
+      const nextState = { ...prev, exercises: updated };
+      localStorage.setItem('sf_active_session', JSON.stringify(nextState));
+      return nextState;
+    });
+  };
+
   const recordPR = (
     exerciseId: string, 
     exerciseName: string, 
@@ -681,15 +677,30 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     cloudDeletePR(exerciseId).catch(err => console.error('Cloud PR delete failed:', err));
   };
 
-  const finishLiveWorkout = (notes?: string, rating: number = 5) => {
+  const finishLiveWorkout = (
+    notes?: string, 
+    rating: number = 5,
+    exerciseNotes?: Record<string, string>
+  ) => {
     if (!activeSession) return;
 
     const day = routineData[activeSession.dayId];
     let totalVolume = 0;
     let totalSetsCount = 0;
 
+    // Apply any updated exercise notes from live session or finish modal
+    const exercisesToSave: WorkoutExerciseLog[] = activeSession.exercises.map(ex => {
+      const finalNote = exerciseNotes && exerciseNotes[ex.exerciseId] !== undefined 
+        ? exerciseNotes[ex.exerciseId] 
+        : ex.notes;
+      return {
+        ...ex,
+        notes: finalNote && finalNote.trim() ? finalNote.trim() : undefined
+      };
+    });
+
     // Check PRs on all completed sets
-    activeSession.exercises.forEach(exLog => {
+    exercisesToSave.forEach(exLog => {
       const exerciseDef = day?.exercises.find(e => e.id === exLog.exerciseId);
       const muscleGroup = exerciseDef?.muscleGroup || 'Full Body';
 
@@ -709,10 +720,10 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       startTime: activeSession.startTime,
       endTime: new Date().toISOString(),
       durationSeconds: activeSession.elapsedSeconds,
-      exercises: activeSession.exercises,
+      exercises: exercisesToSave,
       totalVolumeKg: totalVolume,
       totalSetsCompleted: totalSetsCount,
-      notes,
+      notes: notes && notes.trim() ? notes.trim() : undefined,
       rating
     };
 
@@ -936,6 +947,7 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updateLiveSet,
       addLiveSet,
       removeLiveSet,
+      updateLiveExerciseNote,
       personalRecords,
       recordPR,
       deletePR,

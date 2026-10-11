@@ -149,7 +149,7 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
         </div>
 
         {/* Top/PR Display if exists */}
-        {pr && (
+        {pr && pr.maxWeight > 0 && (
           <div className="mt-3.5 bg-gradient-to-r from-yellow-500/10 to-amber-500/5 border border-yellow-500/25 rounded-xl p-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Trophy className="w-4 h-4 text-yellow-400 shrink-0" />

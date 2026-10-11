@@ -126,40 +126,52 @@ async function inspectAndSetupAll() {
       activity_factor = EXCLUDED.activity_factor;
   `;
 
-  // Seed baseline PRs for all primary exercises if missing
-  const defaultPRs = [
-    { id: '1-1', name: 'Chest Press', muscle: 'Pectorales', weight: 75, reps: 8, e1rm: 95, date: '2026-08-22' },
-    { id: '1-2', name: 'Pectoral Fly', muscle: 'Pectorales', weight: 60, reps: 10, e1rm: 80, date: '2026-08-22' },
-    { id: '1-3', name: 'Cable Crossover', muscle: 'Pectorales', weight: 22.5, reps: 12, e1rm: 31.5, date: '2026-08-22' },
-    { id: '2-1', name: 'Lat Pulldown', muscle: 'Espalda', weight: 68, reps: 10, e1rm: 90.7, date: '2026-08-23' },
-    { id: '2-2', name: 'Seated Row', muscle: 'Espalda', weight: 65, reps: 10, e1rm: 86.7, date: '2026-08-23' },
-    { id: '2-3', name: 'Remo Unilateral', muscle: 'Espalda', weight: 32, reps: 8, e1rm: 40.5, date: '2026-08-23' },
-    { id: '3-1', name: 'Shoulder Press', muscle: 'Hombros', weight: 45, reps: 10, e1rm: 60, date: '2026-08-24' },
-    { id: '3-2', name: 'Cruce Poleas Bajas', muscle: 'Hombros', weight: 12.5, reps: 15, e1rm: 18.8, date: '2026-08-24' },
-    { id: '3-3', name: 'Elevaciones Laterales', muscle: 'Hombros', weight: 14, reps: 12, e1rm: 19.6, date: '2026-08-24' },
-    { id: '4-1', name: 'Linear Hack Squat', muscle: 'Piernas', weight: 120, reps: 8, e1rm: 152, date: '2026-08-25' },
-    { id: '4-2', name: 'Seated Leg Curl', muscle: 'Piernas', weight: 60, reps: 10, e1rm: 80, date: '2026-08-25' },
-    { id: '4-3', name: 'Leg Press 45°', muscle: 'Piernas', weight: 200, reps: 8, e1rm: 253.3, date: '2026-08-25' },
-    { id: '4-4', name: 'Hip Thrust', muscle: 'Piernas', weight: 110, reps: 10, e1rm: 146.7, date: '2026-08-25' },
-    { id: '5-1', name: 'Copa con Mancuerna', muscle: 'Brazos', weight: 28, reps: 12, e1rm: 39.2, date: '2026-08-26' },
-    { id: '5-2', name: 'Bíceps Inclinado', muscle: 'Brazos', weight: 16, reps: 10, e1rm: 21.3, date: '2026-08-26' },
-    { id: '5-3', name: 'Tríceps Press en Polea', muscle: 'Brazos', weight: 35, reps: 12, e1rm: 49, date: '2026-08-26' },
-    { id: '5-4', name: 'Bíceps Curl Máquina', muscle: 'Brazos', weight: 40, reps: 10, e1rm: 53.3, date: '2026-08-26' }
-  ];
-
-  for (const pr of defaultPRs) {
-    const history = [
-      { date: pr.date, weight: pr.weight, reps: pr.reps, estimated1RM: pr.e1rm }
-    ];
-    await sql`
-      INSERT INTO personal_records (
-        exercise_id, exercise_name, muscle_group, max_weight, reps_at_max_weight, estimated_1rm, achieved_date, history, updated_at
-      )
-      VALUES (
-        ${pr.id}, ${pr.name}, ${pr.muscle}, ${pr.weight}, ${pr.reps}, ${pr.e1rm}, ${pr.date}, ${JSON.stringify(history)}::jsonb, CURRENT_TIMESTAMP
-      )
-      ON CONFLICT (exercise_id) DO NOTHING;
-    `;
+  // 3. Tops / PRs se derivan dinámicamente de las sesiones reales en workout_sessions
+  console.log('📊 Verificando / sincronizando PRs desde sesiones reales...');
+  const existingSessions = await sql`SELECT id, day_id, start_time, exercises FROM workout_sessions ORDER BY start_time ASC;`;
+  if (existingSessions && existingSessions.length > 0) {
+    const exTops = {};
+    for (const session of existingSessions) {
+      const exs = typeof session.exercises === 'string' ? JSON.parse(session.exercises) : session.exercises;
+      const sDate = typeof session.start_time === 'string' ? session.start_time.split('T')[0] : new Date(session.start_time).toISOString().split('T')[0];
+      for (const ex of (exs || [])) {
+        if (!exTops[ex.exerciseId]) {
+          exTops[ex.exerciseId] = { exerciseId: ex.exerciseId, exerciseName: ex.exerciseName, maxWeight: 0, repsAtMaxWeight: 0, estimated1rm: 0, achievedDate: sDate, history: [] };
+        }
+        for (const set of (ex.sets || [])) {
+          const w = Number(set.weight) || 0;
+          const r = Number(set.reps) || 0;
+          if (w > 0 && r > 0 && set.completed !== false) {
+            const e1rm = Math.round(w * (1 + r / 30) * 10) / 10;
+            const cur = exTops[ex.exerciseId];
+            if (w > cur.maxWeight || (w === cur.maxWeight && r > cur.repsAtMaxWeight)) {
+              cur.maxWeight = w;
+              cur.repsAtMaxWeight = r;
+              cur.estimated1rm = e1rm;
+              cur.achievedDate = sDate;
+              cur.history.push({ date: sDate, weight: w, reps: r, estimated1RM: e1rm });
+            }
+          }
+        }
+      }
+    }
+    for (const [exId, top] of Object.entries(exTops)) {
+      await sql`
+        INSERT INTO personal_records (
+          exercise_id, exercise_name, muscle_group, max_weight, reps_at_max_weight, estimated_1rm, achieved_date, history, updated_at
+        )
+        VALUES (
+          ${exId}, ${top.exerciseName}, 'General', ${top.maxWeight}, ${top.repsAtMaxWeight}, ${top.estimated1rm}, ${top.achievedDate}, ${JSON.stringify(top.history)}::jsonb, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (exercise_id) DO UPDATE SET
+          max_weight = EXCLUDED.max_weight,
+          reps_at_max_weight = EXCLUDED.reps_at_max_weight,
+          estimated_1rm = EXCLUDED.estimated_1rm,
+          achieved_date = EXCLUDED.achieved_date,
+          history = EXCLUDED.history,
+          updated_at = CURRENT_TIMESTAMP;
+      `;
+    }
   }
 
   // Seed sample past workout session if empty
