@@ -173,7 +173,7 @@ export const cloudFetchWorkoutHistory = async (): Promise<WorkoutSession[] | nul
   if (!sqlClient) return null;
   try {
     const rows = (await sqlClient`
-      SELECT id, day_id, day_title, start_time, end_time, duration_seconds, exercises, total_volume_kg, total_sets_completed, notes, rating
+      SELECT id, day_id, week_number, day_number, day_key, day_title, start_time, end_time, duration_seconds, exercises, total_volume_kg, total_sets_completed, notes, rating
       FROM workout_sessions
       ORDER BY start_time DESC;
     `) as any[];
@@ -181,9 +181,12 @@ export const cloudFetchWorkoutHistory = async (): Promise<WorkoutSession[] | nul
     return rows.map((r: any) => ({
       id: r.id,
       dayId: r.day_id,
+      weekNumber: r.week_number ? Number(r.week_number) : 1,
+      dayNumber: r.day_number ? Number(r.day_number) : 1,
+      dayKey: r.day_key || undefined,
       dayTitle: r.day_title,
-      startTime: r.start_time,
-      endTime: r.end_time,
+      startTime: r.start_time instanceof Date ? r.start_time.toISOString() : String(r.start_time),
+      endTime: r.end_time ? (r.end_time instanceof Date ? r.end_time.toISOString() : String(r.end_time)) : undefined,
       durationSeconds: Number(r.duration_seconds),
       exercises: typeof r.exercises === 'string' ? JSON.parse(r.exercises) : (r.exercises || []),
       totalVolumeKg: Number(r.total_volume_kg),
@@ -201,13 +204,20 @@ export const cloudSaveWorkoutSession = async (session: WorkoutSession): Promise<
   if (!sqlClient) return false;
   try {
     const exercisesJson = JSON.stringify(session.exercises || []);
+    const weekNum = session.weekNumber || 1;
+    const dayNum = session.dayNumber || 1;
+    const dayKey = session.dayKey || null;
+
     await sqlClient`
       INSERT INTO workout_sessions (
-        id, day_id, day_title, start_time, end_time, duration_seconds, exercises, total_volume_kg, total_sets_completed, notes, rating, created_at
+        id, day_id, week_number, day_number, day_key, day_title, start_time, end_time, duration_seconds, exercises, total_volume_kg, total_sets_completed, notes, rating, created_at
       )
       VALUES (
         ${session.id},
         ${session.dayId},
+        ${weekNum},
+        ${dayNum},
+        ${dayKey},
         ${session.dayTitle},
         ${session.startTime},
         ${session.endTime || null},
@@ -220,12 +230,59 @@ export const cloudSaveWorkoutSession = async (session: WorkoutSession): Promise<
         CURRENT_TIMESTAMP
       )
       ON CONFLICT (id) DO UPDATE SET
+        day_id = EXCLUDED.day_id,
+        week_number = EXCLUDED.week_number,
+        day_number = EXCLUDED.day_number,
+        day_key = EXCLUDED.day_key,
+        day_title = EXCLUDED.day_title,
+        start_time = EXCLUDED.start_time,
+        end_time = EXCLUDED.end_time,
+        duration_seconds = EXCLUDED.duration_seconds,
+        exercises = EXCLUDED.exercises,
+        total_volume_kg = EXCLUDED.total_volume_kg,
+        total_sets_completed = EXCLUDED.total_sets_completed,
         notes = EXCLUDED.notes,
         rating = EXCLUDED.rating;
     `;
     return true;
   } catch (err) {
     console.error('Error saving session to Neon:', err);
+    return false;
+  }
+};
+
+export const cloudFetchCompletedExercises = async (): Promise<Record<string, boolean> | null> => {
+  if (!sqlClient) return null;
+  try {
+    const rows = (await sqlClient`SELECT day_id, exercise_id, completed FROM completed_exercises;`) as any[];
+    if (!Array.isArray(rows)) return null;
+    const result: Record<string, boolean> = {};
+    rows.forEach(r => {
+      result[`${r.day_id}-${r.exercise_id}`] = Boolean(r.completed);
+    });
+    return result;
+  } catch (err) {
+    console.error('Error fetching completed exercises from Neon:', err);
+    return null;
+  }
+};
+
+export const cloudSaveCompletedExercise = async (dayId: string, exerciseId: string, completed: boolean): Promise<boolean> => {
+  if (!sqlClient) return false;
+  try {
+    const id = `${dayId}_${exerciseId}`;
+    if (completed) {
+      await sqlClient`
+        INSERT INTO completed_exercises (id, day_id, exercise_id, completed, completed_at)
+        VALUES (${id}, ${dayId}, ${exerciseId}, true, CURRENT_TIMESTAMP)
+        ON CONFLICT (id) DO UPDATE SET completed = true;
+      `;
+    } else {
+      await sqlClient`DELETE FROM completed_exercises WHERE id = ${id};`;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error saving completed exercise to Neon:', err);
     return false;
   }
 };

@@ -49,8 +49,9 @@ export const PRChart: React.FC<PRChartProps> = ({ pr }) => {
               fontSize: '12px'
             }}
             formatter={(value: any, name: any) => {
-              if (name === 'estimado1RM') return [`${value} kg`, '1RM Estimado'];
-              if (name === 'peso') return [`${value} kg`, 'Carga Levantada'];
+              const unit = pr.weightUnit || 'kg';
+              if (name === 'estimado1RM') return [`${value} ${unit}`, '1RM Estimado'];
+              if (name === 'peso') return [`${value} ${unit}`, 'Carga Levantada'];
               return [value, name];
             }}
             labelFormatter={(label, payload) => {

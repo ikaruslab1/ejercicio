@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useWorkout, calculate1RM } from '../../context/WorkoutContext';
+import { getLocalDateString } from '../../lib/dateUtils';
 import { 
   CalendarDays, 
   Scale, 
@@ -29,22 +30,23 @@ export const DayTrackingView: React.FC = () => {
 
   // Weight logger state
   const [inputWeight, setInputWeight] = useState<number>(userProfile.weightKg || 90);
-  const [inputDate, setInputDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [inputDate, setInputDate] = useState<string>(() => getLocalDateString());
   const [inputNotes, setInputNotes] = useState<string>('');
   const [weightSavedToast, setWeightSavedToast] = useState(false);
 
-  // Filters state
-  const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
+  // Filters state (Semana & Grupo/Split)
+  const [selectedWeekFilter, setSelectedWeekFilter] = useState<string>('all');
+  const [selectedSplitFilter, setSelectedSplitFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // CSV Export Date Range state
   const [csvStartDate, setCsvStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().split('T')[0];
+    return getLocalDateString(d);
   });
   const [csvEndDate, setCsvEndDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    return getLocalDateString();
   });
 
   const handleSaveWeight = (e: React.FormEvent) => {
@@ -56,11 +58,40 @@ export const DayTrackingView: React.FC = () => {
     setTimeout(() => setWeightSavedToast(false), 3000);
   };
 
-  // Filtered Sessions
+  // Filtered Sessions by Week, Split Group, and Search Query
   const filteredSessions = workoutHistory.filter(session => {
-    if (selectedDayFilter !== 'all' && session.dayId !== selectedDayFilter) {
-      return false;
+    // 1. Week Filter
+    if (selectedWeekFilter !== 'all') {
+      const targetWeek = parseInt(selectedWeekFilter, 10);
+      const sessionWeek = session.weekNumber || (session.dayId.startsWith('w') ? parseInt(session.dayId.split('_')[0].replace('w', ''), 10) : 1);
+      if (sessionWeek !== targetWeek) return false;
     }
+
+    // 2. Split Group Filter
+    if (selectedSplitFilter !== 'all') {
+      const titleLower = (session.dayTitle || '').toLowerCase();
+      const idLower = (session.dayId || '').toLowerCase();
+      const key = session.dayKey || '';
+
+      let matchSplit = key === selectedSplitFilter;
+      if (!matchSplit) {
+        if (selectedSplitFilter === 'upper1') {
+          matchSplit = titleLower.includes('upper 1') || idLower.endsWith('_d1') || idLower === 'd1';
+        } else if (selectedSplitFilter === 'lower1') {
+          matchSplit = titleLower.includes('lower 1') || idLower.endsWith('_d2') || idLower === 'd2';
+        } else if (selectedSplitFilter === 'upper2') {
+          matchSplit = titleLower.includes('upper 2') || idLower.endsWith('_d3') || idLower === 'd3';
+        } else if (selectedSplitFilter === 'lower2') {
+          matchSplit = titleLower.includes('lower 2') || idLower.endsWith('_d4') || idLower === 'd4';
+        } else if (selectedSplitFilter === 'arms_delts') {
+          matchSplit = titleLower.includes('arms') || titleLower.includes('brazos') || idLower.endsWith('_d5') || idLower === 'd5';
+        }
+      }
+
+      if (!matchSplit) return false;
+    }
+
+    // 3. Text Search Query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchDay = session.dayTitle.toLowerCase().includes(q);
@@ -298,8 +329,8 @@ export const DayTrackingView: React.FC = () => {
                   onClick={() => {
                     const d = new Date();
                     d.setDate(d.getDate() - 7);
-                    setCsvStartDate(d.toISOString().split('T')[0]);
-                    setCsvEndDate(new Date().toISOString().split('T')[0]);
+                    setCsvStartDate(getLocalDateString(d));
+                    setCsvEndDate(getLocalDateString());
                   }}
                   className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-[11px]"
                 >
@@ -310,8 +341,8 @@ export const DayTrackingView: React.FC = () => {
                   onClick={() => {
                     const d = new Date();
                     d.setDate(d.getDate() - 30);
-                    setCsvStartDate(d.toISOString().split('T')[0]);
-                    setCsvEndDate(new Date().toISOString().split('T')[0]);
+                    setCsvStartDate(getLocalDateString(d));
+                    setCsvEndDate(getLocalDateString());
                   }}
                   className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-[11px]"
                 >
@@ -321,7 +352,7 @@ export const DayTrackingView: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setCsvStartDate('2026-01-01');
-                    setCsvEndDate(new Date().toISOString().split('T')[0]);
+                    setCsvEndDate(getLocalDateString());
                   }}
                   className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-[11px]"
                 >
@@ -386,42 +417,76 @@ export const DayTrackingView: React.FC = () => {
       {/* Section 2: Detailed Training Sessions Breakdown */}
       <div className="space-y-4">
         {/* Filter & Search Bar */}
-        <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-md">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-mono text-zinc-400 flex items-center gap-1 font-bold">
-              <Filter size={13} /> Filtrar Día:
-            </span>
-            {[
-              { id: 'all', label: 'Todos' },
-              { id: 'd1', label: 'Día 1: Pecho' },
-              { id: 'd2', label: 'Día 2: Espalda' },
-              { id: 'd3', label: 'Día 3: Hombro' },
-              { id: 'd4', label: 'Día 4: Pierna' },
-              { id: 'd5', label: 'Día 5: Brazos' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setSelectedDayFilter(tab.id)}
-                className={`px-3 py-1 text-xs font-mono rounded-xl transition-all ${
-                  selectedDayFilter === tab.id
-                    ? 'bg-yellow-500 text-black font-bold shadow-md shadow-yellow-500/20'
-                    : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+        <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-3 shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Split Group Filters */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-mono text-zinc-400 flex items-center gap-1 font-bold mr-1">
+                <Filter size={13} className="text-yellow-400" /> División:
+              </span>
+              {[
+                { id: 'all', label: 'Todos los Grupos' },
+                { id: 'upper1', label: 'Upper 1 (Torso)' },
+                { id: 'lower1', label: 'Lower 1 (Cuádriceps)' },
+                { id: 'upper2', label: 'Upper 2 (Espalda/Pecho)' },
+                { id: 'lower2', label: 'Lower 2 (Femoral/Glúteo)' },
+                { id: 'arms_delts', label: 'Arms & Delts (Brazos)' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setSelectedSplitFilter(tab.id)}
+                  className={`px-3 py-1 text-xs font-mono rounded-xl transition-all ${
+                    selectedSplitFilter === tab.id
+                      ? 'bg-yellow-500 text-black font-bold shadow-md shadow-yellow-500/20'
+                      : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar ejercicio o nota..."
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
+              />
+            </div>
           </div>
 
-          <div className="relative min-w-[200px] flex-1 sm:flex-initial">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar ejercicio o nota..."
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
-            />
+          {/* Week Filters (Semana 1..12) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-2 border-t border-zinc-800/80 scrollbar-thin">
+            <span className="text-xs font-mono text-zinc-400 font-bold shrink-0 mr-1">
+              Semana:
+            </span>
+            <button
+              onClick={() => setSelectedWeekFilter('all')}
+              className={`px-2.5 py-1 text-xs font-mono rounded-lg shrink-0 transition-all ${
+                selectedWeekFilter === 'all'
+                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 font-bold'
+                  : 'bg-zinc-950 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
+              }`}
+            >
+              Todas
+            </button>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map(w => (
+              <button
+                key={w}
+                onClick={() => setSelectedWeekFilter(String(w))}
+                className={`px-2.5 py-1 text-xs font-mono rounded-lg shrink-0 transition-all ${
+                  selectedWeekFilter === String(w)
+                    ? 'bg-yellow-500 text-black font-bold shadow-sm'
+                    : 'bg-zinc-950 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
+                }`}
+              >
+                Sem {w}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -516,6 +581,7 @@ export const DayTrackingView: React.FC = () => {
                   {/* Exercises & Sets Detailed Table */}
                   <div className="space-y-4">
                     {session.exercises.map((exLog, exIdx) => {
+                      const exUnit = exLog.weightUnit || 'kg';
                       const exerciseVolume = exLog.sets.reduce((acc, s) => acc + (s.completed ? s.weight * s.reps : 0), 0);
 
                       return (
@@ -532,14 +598,28 @@ export const DayTrackingView: React.FC = () => {
                               <h4 className="text-sm font-bold text-white capitalize-first">
                                 {exLog.exerciseName}
                               </h4>
-                              <span className="text-[11px] font-mono text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded hidden sm:inline">
-                                {exLog.machine}
-                              </span>
+                              {exLog.weightUnit && (
+                                <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-zinc-800 text-yellow-400 border border-zinc-700">
+                                  {exLog.weightUnit}
+                                </span>
+                              )}
+                              {exLog.muscleGroup && (
+                                <span className="text-[11px] font-mono text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded hidden sm:inline">
+                                  {exLog.muscleGroup}
+                                </span>
+                              )}
                             </div>
                             <span className="text-xs font-mono font-bold text-yellow-400">
-                              Volumen: {exerciseVolume.toLocaleString()} kg
+                              Volumen: {exerciseVolume.toLocaleString()} {exUnit}
                             </span>
                           </div>
+
+                          {/* Exercise user notes if present */}
+                          {exLog.notes && exLog.notes.trim() && (
+                            <div className="bg-yellow-500/10 border border-yellow-500/20 px-3 py-1.5 rounded-xl text-xs text-yellow-300">
+                              📝 <strong className="text-yellow-400">Nota del ejercicio:</strong> {exLog.notes}
+                            </div>
+                          )}
 
                           {/* Sets Detailed Grid */}
                           <div className="overflow-x-auto">
@@ -547,7 +627,7 @@ export const DayTrackingView: React.FC = () => {
                               <thead>
                                 <tr className="text-zinc-500 border-b border-zinc-900 text-[10px] uppercase font-bold">
                                   <th className="py-1 px-2">Serie</th>
-                                  <th className="py-1 px-2">Carga (kg)</th>
+                                  <th className="py-1 px-2">Carga ({exUnit})</th>
                                   <th className="py-1 px-2">Reps</th>
                                   <th className="py-1 px-2">RIR</th>
                                   <th className="py-1 px-2">Volumen</th>
@@ -557,17 +637,26 @@ export const DayTrackingView: React.FC = () => {
                               </thead>
                               <tbody className="divide-y divide-zinc-900">
                                 {exLog.sets.map((set, sIdx) => {
+                                  const setUnit = set.weightUnit || exUnit;
                                   const e1rm = calculate1RM(set.weight, set.reps);
                                   const setVol = set.weight * set.reps;
 
                                   return (
                                     <tr key={sIdx} className="hover:bg-zinc-900/40 transition-colors">
-                                      <td className="py-1.5 px-2 font-bold text-zinc-300">Set #{set.setNumber}</td>
-                                      <td className="py-1.5 px-2 text-yellow-400 font-bold">{set.weight} kg</td>
+                                      <td className="py-1.5 px-2 font-bold text-zinc-300">
+                                        {set.isWarmup ? (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                            Aprox #{set.setNumber}
+                                          </span>
+                                        ) : (
+                                          <span>Set #{set.setNumber}</span>
+                                        )}
+                                      </td>
+                                      <td className="py-1.5 px-2 text-yellow-400 font-bold">{set.weight} {setUnit}</td>
                                       <td className="py-1.5 px-2 text-white font-bold">{set.reps} reps</td>
                                       <td className="py-1.5 px-2 text-zinc-400">{set.rir !== undefined ? `${set.rir} RIR` : '-'}</td>
-                                      <td className="py-1.5 px-2 text-zinc-300">{setVol} kg</td>
-                                      <td className="py-1.5 px-2 text-amber-400">~{e1rm} kg</td>
+                                      <td className="py-1.5 px-2 text-zinc-300">{setVol} {setUnit}</td>
+                                      <td className="py-1.5 px-2 text-amber-400">~{e1rm} {setUnit}</td>
                                       <td className="py-1.5 px-2 text-right">
                                         <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-bold ${
                                           set.completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-500'

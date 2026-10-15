@@ -45,9 +45,9 @@ const MainLayout: React.FC = () => {
         {/* Dynamic Route/View Switcher */}
         <main className="flex-1 p-4 sm:p-6 lg:p-10 max-w-6xl w-full mx-auto">
           {activeTab === 'dashboard' && <DashboardView />}
-          {activeTab.startsWith('d') && (
+          {(activeTab.startsWith('w') || activeTab.startsWith('d') || activeTab === 'routine') && (
             <RoutineView 
-              dayId={activeTab} 
+              dayId={activeTab.startsWith('w') ? activeTab : undefined} 
               onOpenContingencyWithExercise={handleOpenContingencyWithExercise}
             />
           )}

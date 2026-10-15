@@ -45,10 +45,10 @@ export default async function handler(req: any, res: any) {
       }
 
       if (type === 'save_session') {
-        const { id, dayId, dayTitle, startTime, endTime, durationSeconds, exercises, totalVolumeKg, totalSetsCompleted, notes, rating } = payload;
+        const { id, dayId, weekNumber, dayNumber, dayKey, dayTitle, startTime, endTime, durationSeconds, exercises, totalVolumeKg, totalSetsCompleted, notes, rating } = payload;
         await sql`
-          INSERT INTO workout_sessions (id, day_id, day_title, start_time, end_time, duration_seconds, exercises, total_volume_kg, total_sets_completed, notes, rating, created_at)
-          VALUES (${id}, ${dayId}, ${dayTitle}, ${startTime}, ${endTime}, ${durationSeconds}, ${JSON.stringify(exercises)}::jsonb, ${totalVolumeKg}, ${totalSetsCompleted}, ${notes}, ${rating}, CURRENT_TIMESTAMP)
+          INSERT INTO workout_sessions (id, day_id, week_number, day_number, day_key, day_title, start_time, end_time, duration_seconds, exercises, total_volume_kg, total_sets_completed, notes, rating, created_at)
+          VALUES (${id}, ${dayId}, ${weekNumber || 1}, ${dayNumber || 1}, ${dayKey || null}, ${dayTitle}, ${startTime}, ${endTime}, ${durationSeconds}, ${JSON.stringify(exercises)}::jsonb, ${totalVolumeKg}, ${totalSetsCompleted}, ${notes}, ${rating}, CURRENT_TIMESTAMP)
           ON CONFLICT (id) DO UPDATE SET notes = EXCLUDED.notes, rating = EXCLUDED.rating;
         `;
         return res.status(200).json({ ok: true });

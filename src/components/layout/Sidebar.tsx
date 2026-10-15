@@ -22,14 +22,22 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onOpenSettings }) => {
-  const { activeTab, setActiveTab, activeSession, setIsLiveModalOpen, userProfile } = useWorkout();
+  const { 
+    activeTab, 
+    setActiveTab, 
+    activeSession, 
+    setIsLiveModalOpen, 
+    userProfile,
+    selectedWeek,
+    setSelectedWeek
+  } = useWorkout();
 
   const routineItems = [
-    { id: 'd1', label: 'Día 1: Pecho + Abs', tag: 'Torso' },
-    { id: 'd2', label: 'Día 2: Espalda', tag: 'Dorsal' },
-    { id: 'd3', label: 'Día 3: Hombros', tag: 'Deltoides' },
-    { id: 'd4', label: 'Día 4: Piernas', tag: 'Inferior' },
-    { id: 'd5', label: 'Día 5: Brazos', tag: 'Bíceps/Tríceps' },
+    { id: `w${selectedWeek}_d1`, label: 'Día 1: Upper 1', tag: 'Torso' },
+    { id: `w${selectedWeek}_d2`, label: 'Día 2: Lower 1', tag: 'Cuádriceps' },
+    { id: `w${selectedWeek}_d3`, label: 'Día 3: Upper 2', tag: 'Espalda/Pecho' },
+    { id: `w${selectedWeek}_d4`, label: 'Día 4: Lower 2', tag: 'Femoral/Glúteo' },
+    { id: `w${selectedWeek}_d5`, label: 'Día 5: Arms & Delts', tag: 'Brazos/Hombros' },
   ];
 
   const mainItems = [
@@ -147,11 +155,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onOpenSetting
 
           {/* Rutinas 5 Días */}
           <div>
-            <div className="flex items-center justify-between px-3 mb-1.5">
+            <div className="flex items-center justify-between px-3 mb-2">
               <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
                 Rutina Semanal
               </p>
-              <span className="text-[10px] text-zinc-400 font-mono">5 DÍAS</span>
+              <select
+                value={selectedWeek}
+                onChange={(e) => {
+                  const w = parseInt(e.target.value, 10);
+                  setSelectedWeek(w);
+                  if (activeTab.startsWith('w')) {
+                    const parts = activeTab.split('_d');
+                    const dayPart = parts[1] || '1';
+                    setActiveTab(`w${w}_d${dayPart}`);
+                  }
+                }}
+                className="bg-zinc-900 border border-zinc-800 text-yellow-400 font-mono font-bold text-[11px] rounded-lg px-2 py-0.5 focus:outline-none focus:border-yellow-500 cursor-pointer"
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(w => (
+                  <option key={w} value={w}>Semana {w}</option>
+                ))}
+              </select>
             </div>
 
             <div className="space-y-1">

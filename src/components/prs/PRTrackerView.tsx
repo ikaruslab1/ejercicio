@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useWorkout, calculate1RM } from '../../context/WorkoutContext';
-import type { MuscleGroup } from '../../types/workout';
+import { getLocalDateString } from '../../lib/dateUtils';
+import type { MuscleGroup, WeightUnit } from '../../types/workout';
 import { routineData } from '../../data/routineData';
 import { PRChart } from './PRChart';
 import { 
@@ -28,8 +29,9 @@ export const PRTrackerView: React.FC = () => {
   const [newCustomName, setNewCustomName] = useState('');
   const [newMuscleGroup, setNewMuscleGroup] = useState<MuscleGroup>('Pectorales');
   const [newWeight, setNewWeight] = useState<number>(60);
+  const [newWeightUnit, setNewWeightUnit] = useState<WeightUnit>('kg');
   const [newReps, setNewReps] = useState<number>(8);
-  const [newDate, setNewDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [newDate, setNewDate] = useState<string>(() => getLocalDateString());
 
   // 1RM Quick Calculator State
   const [calcWeight, setCalcWeight] = useState<number>(80);
@@ -39,8 +41,19 @@ export const PRTrackerView: React.FC = () => {
 
   const muscleGroups: string[] = ['Todos', 'Pectorales', 'Espalda', 'Hombros', 'Piernas', 'Brazos'];
 
-  // Flatten all exercises from routineData to allow easy selection
-  const allRoutineExercises = Object.values(routineData).flatMap(d => d.exercises);
+  // Deduplicated unique exercises across the Min-Max program
+  const allRoutineExercises = useMemo(() => {
+    const map = new Map<string, typeof routineData['w1_d1']['exercises'][0]>();
+    Object.values(routineData).forEach(d => {
+      d.exercises.forEach(ex => {
+        const key = ex.exerciseId || ex.name;
+        if (!map.has(key)) {
+          map.set(key, ex);
+        }
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, []);
 
   const prList = Object.values(personalRecords).filter(pr => {
     if (selectedMuscle === 'Todos') return true;
@@ -69,7 +82,7 @@ export const PRTrackerView: React.FC = () => {
 
     if (!exerciseName) return;
 
-    recordPR(exerciseId, exerciseName, muscleGroup, newWeight, newReps, newDate);
+    recordPR(exerciseId, exerciseName, muscleGroup, newWeight, newReps, newDate, newWeightUnit);
     setIsAddModalOpen(false);
     setNewCustomName('');
     setNewExerciseId('');
@@ -257,7 +270,9 @@ export const PRTrackerView: React.FC = () => {
                 <div className="grid grid-cols-3 gap-2.5">
                   <div className="bg-zinc-950 p-2.5 rounded-2xl border border-zinc-800/80 text-center">
                     <p className="text-[10px] text-zinc-400 font-bold uppercase">Carga Máx</p>
-                    <p className="font-mono font-black text-lg text-yellow-400">{pr.maxWeight} kg</p>
+                    <p className="font-mono font-black text-lg text-yellow-400">
+                      {pr.maxWeight} {pr.weightUnit || 'kg'}
+                    </p>
                   </div>
 
                   <div className="bg-zinc-950 p-2.5 rounded-2xl border border-zinc-800/80 text-center">
@@ -267,7 +282,9 @@ export const PRTrackerView: React.FC = () => {
 
                   <div className="bg-zinc-950 p-2.5 rounded-2xl border border-zinc-800/80 text-center">
                     <p className="text-[10px] text-zinc-400 font-bold uppercase">1RM Est.</p>
-                    <p className="font-mono font-black text-lg text-blue-400">~{pr.estimated1RM} kg</p>
+                    <p className="font-mono font-black text-lg text-blue-400">
+                      ~{pr.estimated1RM} {pr.weightUnit || 'kg'}
+                    </p>
                   </div>
                 </div>
 
@@ -337,8 +354,8 @@ export const PRTrackerView: React.FC = () => {
                 >
                   <option value="">-- Elige un ejercicio o crea uno manual --</option>
                   {allRoutineExercises.map(ex => (
-                    <option key={ex.id} value={ex.id}>
-                      {ex.name} ({ex.muscleGroup} - {ex.machine})
+                    <option key={ex.exerciseId || ex.id} value={ex.exerciseId || ex.id}>
+                      {ex.name} ({ex.muscleGroup})
                     </option>
                   ))}
                   <option value="custom">+ Ejercicio Personalizado / No listado</option>
@@ -385,12 +402,30 @@ export const PRTrackerView: React.FC = () => {
               {/* Weight and Reps */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block mb-1">
-                    Peso (kg)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block">
+                      Peso ({newWeightUnit})
+                    </label>
+                    <div className="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 text-[10px] font-mono">
+                      <button
+                        type="button"
+                        onClick={() => setNewWeightUnit('kg')}
+                        className={`px-1.5 py-0.5 rounded font-bold ${newWeightUnit === 'kg' ? 'bg-yellow-500 text-black' : 'text-zinc-400'}`}
+                      >
+                        KG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewWeightUnit('lbs')}
+                        className={`px-1.5 py-0.5 rounded font-bold ${newWeightUnit === 'lbs' ? 'bg-amber-400 text-black' : 'text-zinc-400'}`}
+                      >
+                        LBS
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="number"
-                    step="0.5"
+                    step={newWeightUnit === 'lbs' ? "1" : "0.5"}
                     value={newWeight}
                     onChange={(e) => setNewWeight(parseFloat(e.target.value) || 0)}
                     className="w-full bg-zinc-950 border border-zinc-700 text-center font-mono font-bold text-base text-yellow-400 rounded-xl p-2 focus:outline-none focus:border-yellow-500"

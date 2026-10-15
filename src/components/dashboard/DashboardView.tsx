@@ -23,19 +23,25 @@ export const DashboardView: React.FC = () => {
     personalRecords, 
     workoutHistory, 
     completedExercises, 
-    userProfile 
+    userProfile,
+    selectedWeek
   } = useWorkout();
 
-  // Find next suggested workout day
-  const daysList = ['d1', 'd2', 'd3', 'd4', 'd5'];
+  // Find next suggested workout day for current week that has not been recorded
+  const daysList = [1, 2, 3, 4, 5].map(d => `w${selectedWeek}_d${d}`);
   const nextDayId = daysList.find(dayId => {
+    const isRecorded = workoutHistory.some(s => s.dayId === dayId);
+    if (isRecorded) return false;
     const day = routineData[dayId];
     if (!day) return false;
-    const completedCount = day.exercises.filter(ex => completedExercises[`${day.id}-${ex.id}`]).length;
+    const completedCount = day.exercises.filter(
+      ex => completedExercises[`${day.id}-${ex.exerciseId}`] || completedExercises[`${day.id}-${ex.id}`]
+    ).length;
     return completedCount < day.exercises.length;
-  }) || 'd1';
+  }) || daysList.find(dayId => !workoutHistory.some(s => s.dayId === dayId)) || `w${selectedWeek}_d1`;
 
-  const nextDay = routineData[nextDayId];
+  const nextDay = routineData[nextDayId] || routineData[`w${selectedWeek}_d1`];
+  const isNextDayRecorded = workoutHistory.some(s => s.dayId === nextDay?.id);
 
   // Top 3 highest PRs
   const topPRs = Object.values(personalRecords)
@@ -96,13 +102,23 @@ export const DashboardView: React.FC = () => {
               </div>
 
               <div className="flex gap-2">
-                <button
-                  onClick={() => startLiveWorkout(nextDay.id)}
-                  className="flex-1 py-3 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-black font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 transition-all"
-                >
-                  <Play size={16} className="fill-current" />
-                  <span>Entrenar Ahora</span>
-                </button>
+                {isNextDayRecorded ? (
+                  <button
+                    onClick={() => setActiveTab('history')}
+                    className="flex-1 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 font-black text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 transition-all"
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Sesión Ya Registrada</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => startLiveWorkout(nextDay.id)}
+                    className="flex-1 py-3 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-black font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Play size={16} className="fill-current" />
+                    <span>Entrenar Ahora</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => setActiveTab(nextDay.id)}
@@ -132,8 +148,11 @@ export const DashboardView: React.FC = () => {
             const day = routineData[dayId];
             if (!day) return null;
 
-            const completedCount = day.exercises.filter(ex => completedExercises[`${day.id}-${ex.id}`]).length;
-            const isCompleted = completedCount === day.exercises.length && day.exercises.length > 0;
+            const completedCount = day.exercises.filter(
+              ex => completedExercises[`${day.id}-${ex.exerciseId}`] || completedExercises[`${day.id}-${ex.id}`]
+            ).length;
+            const isRecorded = workoutHistory.some(s => s.dayId === dayId);
+            const isCompleted = isRecorded || (completedCount === day.exercises.length && day.exercises.length > 0);
 
             return (
               <div
@@ -148,16 +167,16 @@ export const DashboardView: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-mono font-bold text-yellow-400 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800">
-                      Día {day.dayNumber}
+                      Día {day.dayNumber} · {day.dayName}
                     </span>
                     {isCompleted ? (
-                      <CheckCircle2 size={16} className="text-yellow-400" />
+                      <CheckCircle2 size={16} className="text-emerald-400" />
                     ) : (
                       <span className="text-[10px] text-zinc-500 font-mono">{completedCount}/{day.exercises.length}</span>
                     )}
                   </div>
                   <h4 className="font-bold text-sm text-white line-clamp-1">{day.title.split(':')[1] || day.title}</h4>
-                  <p className="text-[11px] text-zinc-400 line-clamp-1 mt-0.5">{day.tags.slice(0, 2).join(' · ')}</p>
+                  <p className="text-[11px] text-zinc-400 line-clamp-1 mt-0.5">{day.subtitle || day.focus}</p>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between text-[11px]">
